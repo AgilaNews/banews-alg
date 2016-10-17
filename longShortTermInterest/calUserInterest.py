@@ -1,4 +1,5 @@
 # -*- coding:utf-8 -*-
+import os
 from datetime import date, datetime, timedelta
 import json
 import urllib
@@ -6,12 +7,14 @@ import MySQLdb
 
 from pyspark import SparkContext
 
+TODAY_LOG_DIR = '/banews/useraction.log-*'
+HISTORY_LOG_DIR = '/banews/useraction'
+
 HADOOP_BIN = '/home/work/hadoop-2.6.0-cdh5.7.0/bin/hadoop'
 ATRICLE_DISPLAY = '020104'
 ARTICLE_CLICK = '020103'
 ARTICLE_LIKE = '020204'
 ARTICLE_COLLECT = '020205'
-PERIOD_DAY = 7
 GRAVITY = 10
 
 def getNewsChannel(start_date=None, end_date=None):
@@ -90,6 +93,8 @@ def getActionLog(sc, start_date, end_date):
                 float(attrDct['time'])/1000.).date()
         if eventId == ATRICLE_DISPLAY:
             for newsId in attrDct['news']:
+                if type(newsId) == int:
+                    continue
                 newsId = newsId.encode('utf-8')
                 channelId = bNewsChannelDct.value.get(newsId, None)
                 if not channelId:
@@ -100,7 +105,7 @@ def getActionLog(sc, start_date, end_date):
             newsId = attrDct['news_id'].encode('utf-8')
             channelId = bNewsChannelDct.value.get(newsId, None)
             if not channelId:
-                continue
+                return resLst
             resLst.append((userId, channelId, newsId,
                 eventId, timestamp))
         return resLst
@@ -110,8 +115,6 @@ def getActionLog(sc, start_date, end_date):
                 lambda attrDct: (attrDct.get('event-id') in eventIdLst) and \
                                 ('did' in attrDct) and \
                                 ('time' in attrDct)
-            ).sample(
-                    False, 0.1, 81
             ).flatMap(
                 # userId, channelId, newsId, eventId, timestamp
                 lambda attrDct: _(attrDct)
@@ -156,23 +159,23 @@ def combineInterest(weekChannelLst, bCategoryDct, latestWeekIdx):
     # news click for each week, N(t)
     totalCliCnt = 0
     for weekIdx, channelId, newsCnt in weekChannelLst:
-        if weekIdx == latestWeekIdx:
-            continue
+        #if weekIdx == latestWeekIdx:
+        #    continue
         weekCliDct[weekIdx] = weekCliDct.get(weekIdx, 0) + newsCnt
         totalCliCnt += newsCnt
     # sum of post sum(p(category=c(i)|click) / p(category=c(i)))
     for weekIdx, channelId, newsCnt in weekChannelLst:
-        if weekIdx == latestWeekIdx:
-            continue
+        #if weekIdx == latestWeekIdx:
+        #    continue
         pCategory = bCategoryDct.value[(weekIdx, channelId)]
         pCategoryCli = newsCnt / weekCliDct[weekIdx]
-        score = channelNewsDct[channelId] * (pCategoryCli / pCategory)
+        score = weekCliDct[weekIdx] * (pCategoryCli / pCategory)
         channelPostDct[channelId] = channelPostDct.get(channelId, 0) + score
     # user's news interests in the near future
     channelPostLst = []
     for channelId, score in channelPostDct.items():
         pCurCategory = bCategoryDct.value[(latestWeekIdx, channelId)]
-        score = pCurCategory * (score + G) / (totalCliCnt + G)
+        score = pCurCategory * (score + GRAVITY) / (totalCliCnt + GRAVITY)
         channelPostLst.append((channelId, score))
     return channelPostLst
 
