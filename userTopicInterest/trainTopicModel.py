@@ -23,6 +23,7 @@ if sys.getdefaultencoding() != default_encoding:
 KDIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = '/data/mysqlBackup/banews'
 PREPROCESS_DATA_DIR = '/data/userTopicDis'
+MODEL_DIR = os.path.join(KDIR, 'data')
 ATTRIBUTE_DIM = 9
 (NEWS_ID, SRC_URL, CHANNEL_ID, TITLE, SRC_NAME, \
         PUBLISH_TIME, FETCH_TIME, CONTENT, TYPE) = \
@@ -109,13 +110,20 @@ def trainLDA(dateObj, withPreprocess=False):
                     learning_method='online')
     print 'training lda model...'
     ldaModel.fit(tfMatrix)
-    with open(os.path.join(KDIR, 'data', 'countVector.m'),
-            'wb') as fp:
-        pickle.dump(vectorizer, fp)
-    with open(os.path.join(KDIR, 'data', 'lda.m'), 'wb') as fp:
+    with open(os.path.join(MODEL_DIR, 'countVector.m'), 'wb') as fp:
+        pickle.dump(tfMatrix, fp)
+    with open(os.path.join(MODEL_DIR, 'lda.m'), 'wb') as fp:
         pickle.dump(ldaModel, fp)
     print 'dumping model...'
     return (vectorizer, ldaModel)
+
+def getDocTopics():
+    with open(os.path.join(MODEL_DIR, 'lda.m'), 'rb') as fp:
+        ldaModel = pickle.load(fp)
+    with open(os.path.join(MODEL_DIR, 'countVector.m'), 'rb') as fp:
+        tfMatrix = pickle.load(fp)
+        print tfMatrix
+        print type(tfMatrix)
 
 def debug(ldaModel, vectorizer, topWords=30):
     featureNameLst = vectorizer.get_feature_names()
@@ -126,6 +134,9 @@ def debug(ldaModel, vectorizer, topWords=30):
         print '\t', topWordStr
 
 if __name__ == '__main__':
-    dateObj = date(2016, 9, 18)
-    (vectorizer, ldaModel) = trainLDA(dateObj, withPreprocess=True)
-    debug(ldaModel, vectorizer)
+    if sys.argv[1] == 'train':
+        dateObj = date(2016, 9, 18)
+        (vectorizer, ldaModel) = trainLDA(dateObj, withPreprocess=True)
+        debug(ldaModel, vectorizer)
+    elif sys.argv[1] == 'test':
+        getDocTopics()
