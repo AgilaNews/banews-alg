@@ -31,7 +31,7 @@ MAX_DF = 0.9
 MIN_DF = 2
 MAX_FEATURES = 100000
 N_TOPIC = 80
-MAX_ITER = 30
+MAX_ITER = 20
 VALID_POS_LST = [NOUN, ADJ, NAMES]
 
 def stripTag(htmlStr):
@@ -148,8 +148,8 @@ if __name__ == '__main__':
     if sys.argv[1] == 'train':
         dateObj = date(2016, 10, 19)
         end_date = date.today() + timedelta(days=1)
-        start_date = end_date - timedelta(days=120)
+        start_date = end_date - timedelta(days=100)
         trainLDA(dateObj, start_date, end_date,
-                withPreprocess=False)
+                withPreprocess=True)
     elif sys.argv[1] == 'test':
         pass
