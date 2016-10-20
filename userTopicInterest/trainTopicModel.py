@@ -20,8 +20,7 @@ if sys.getdefaultencoding() != default_encoding:
 KDIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = '/data/mysqlBackup/banews'
 PREPROCESS_DATA_DIR = '/data/userTopicDis'
-#MODEL_DIR = os.path.join(KDIR, 'data')
-MODEL_DIR = os.path.join(KDIR)
+MODEL_DIR = os.path.join(PREPROCESS_DATA_DIR, 'model')
 ATTRIBUTE_DIM = 9
 (NEWS_ID, SRC_URL, CHANNEL_ID, TITLE, SRC_NAME, \
         PUBLISH_TIME, FETCH_TIME, CONTENT, TYPE) = \
@@ -62,11 +61,14 @@ def preProcessSPACY(dateObj, start_date, end_date, withPreprocess):
     fileName = dateObj.strftime('%Y%m%d') + '_preprocess.dat'
     preNewsDocLst = []
     preNewsIdLst = []
-    print 'preprocessing trainning data...'
+    print '%s, preprocessing trainning data...' % \
+            datetime.now().strftime('%s')
     if withPreprocess:
-        print 'loading trainning data...'
+        print '%s, loading trainning data...' % \
+                datetime.now().strftime('%s')
         newsLst = loadData(dateObj, start_date, end_date)
-        print '%s news loaded...' % len(newsLst)
+        print '%s, %s news loaded...' % \
+                (datetime.now().strftime('%s'), len(newsLst))
         en_nlp = spacy.load('en')
         with open(os.path.join(PREPROCESS_DATA_DIR, fileName), 'w') as fp:
             (idLst, docLst) = zip(*newsLst)
@@ -96,7 +98,8 @@ def preProcessSPACY(dateObj, start_date, end_date, withPreprocess):
 def trainLDA(dateObj, start_date, end_date, withPreprocess=False):
     (preNewsIdLst, preNewsDocLst) = preProcessSPACY(dateObj,
             start_date, end_date, withPreprocess)
-    print 'space vector model building...'
+    print '%s, space vector model building...' % \
+            datetime.now().strftime('%s')
     vectorizer = CountVectorizer(max_df=MAX_DF,
                                  min_df=MIN_DF,
                                  max_features=MAX_FEATURES,
@@ -106,12 +109,14 @@ def trainLDA(dateObj, start_date, end_date, withPreprocess=False):
                     n_topics=N_TOPIC,
                     max_iter=MAX_ITER,
                     learning_method='online',
-                    n_jobs=4,
+                    n_jobs=3,
                     verbose=1,
                     evaluate_every=5)
-    print 'training lda model...'
+    print '%s, training lda model...' % \
+            datetime.now().strftime('%s')
     newsTopicArr = ldaModel.fit_transform(tfMatrix)
-    print 'dumping model...'
+    print '%s, dumping model...' % \
+            datetime.now().strftime('%s')
     dump(vectorizer, ldaModel, newsTopicArr, preNewsIdLst)
     return (vectorizer, ldaModel)
 
@@ -141,10 +146,10 @@ def dump(vectorizer, ldaModel, newsTopicArr, preNewsIdLst,
 
 if __name__ == '__main__':
     if sys.argv[1] == 'train':
-        dateObj = date(2016, 9, 18)
+        dateObj = date(2016, 10, 19)
         end_date = date.today() + timedelta(days=1)
-        start_date = end_date - timedelta(days=180)
+        start_date = end_date - timedelta(days=120)
         trainLDA(dateObj, start_date, end_date,
-                withPreprocess=True)
+                withPreprocess=False)
     elif sys.argv[1] == 'test':
         pass
