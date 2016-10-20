@@ -109,7 +109,7 @@ def trainLDA(dateObj, start_date, end_date, withPreprocess=False):
                     n_topics=N_TOPIC,
                     max_iter=MAX_ITER,
                     learning_method='online',
-                    n_jobs=3,
+                    n_jobs=1,
                     verbose=1,
                     evaluate_every=5)
     print '%s, training lda model...' % \
@@ -150,6 +150,6 @@ if __name__ == '__main__':
         end_date = date.today() + timedelta(days=1)
         start_date = end_date - timedelta(days=100)
         trainLDA(dateObj, start_date, end_date,
-                withPreprocess=True)
+                withPreprocess=False)
     elif sys.argv[1] == 'test':
         pass

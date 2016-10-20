@@ -16,6 +16,8 @@ ARTICLE_CLICK = '020103'
 ARTICLE_LIKE = '020204'
 ARTICLE_COLLECT = '020205'
 GRAVITY = 10
+NEWS_TOPICS_PATH = '/data/userTopicDis/model/newsTopic.d'
+MIN_NEWS_TOPIC_WEIGHT = 0.2
 
 def getNewsChannel(start_date=None, end_date=None):
     conn = MySQLdb.connect(host='10.8.22.123',
@@ -52,6 +54,36 @@ where
     newsChDct = dict(cursor.fetchall())
     return newsChDct
 
+def getTopTopics(topicStr):
+    topicScoLst = [float(val) for val in topicStr.\
+            strip().split(',')]
+    totalSco = float(sum(topicScoLst))
+    if not total:
+        return None
+    topicIdxLst = []
+    maxTopicIdx, maxTopicSco = 0, 0
+    for topicIdx, topicSco in enumerate(topicScoLst):
+        topicSco = topicSco / totalSco
+        if topicSco >= MIN_NEWS_TOPIC_WEIGHT:
+            topicIdxLst.append(topicIdx)
+        if maxTopicSco < topicSco:
+            maxTopicSco = topicSco
+            maxTopicIdx = topicIdx
+    if not topicIdxLst:
+        topicIdxLst.append(maxTopicIdx)
+    return topicIdxLst
+
+def getNewsTopics():
+    newsTopicDct = {}
+    with open(NEWS_TOPICS_PATH, 'r') as fp:
+        for line in fp:
+            vals = line.strip().split('\t', 1)
+            if len(vals) != 2:
+                continue
+            (newsId, topicStr) = vals
+            newsTopicDct[newsId] = getTopTopics(topicStr)
+    return newsTopicDct
+
 def getSpanFileLst(start_date, end_date, withToday=False):
     fileLst = []
     if start_date >= end_date:
@@ -81,8 +113,10 @@ def getSpanFileLst(start_date, end_date, withToday=False):
     return fileLst
 
 def getActionLog(sc, start_date, end_date):
-    newsChDct = getNewsChannel()
-    bNewsChannelDct = sc.broadcast(newsChDct)
+    # Notice: news only belong to one channel,
+    # but can exist in mulitple topics
+    newsTopicDct = getNewsTopics()
+    bNewsTopicDct = sc.broadcast(newsTopicDct)
     eventIdLst = [ARTICLE_CLICK, ATRICLE_DISPLAY]
     fileLst = getSpanFileLst(start_date, end_date)
     def _(attrDct):
@@ -96,18 +130,20 @@ def getActionLog(sc, start_date, end_date):
                 if type(newsId) == int:
                     continue
                 newsId = newsId.encode('utf-8')
-                channelId = bNewsChannelDct.value.get(newsId, None)
-                if not channelId:
+                topicIdxLst = bNewsTopicDct.value.get(newsId, None)
+                if not topicIdxLst:
                     continue
-                resLst.append((userId, channelId, newsId,
-                    eventId, timestamp))
+                for topicIdx in topicIdxLst:
+                    resLst.append((userId, topicIdx, newsId,
+                        eventId, timestamp))
         elif eventId == ARTICLE_CLICK:
             newsId = attrDct['news_id'].encode('utf-8')
-            channelId = bNewsChannelDct.value.get(newsId, None)
-            if not channelId:
+            topicIdxLst = bNewsTopicDct.value.get(newsId, None)
+            if not topicIdxLst:
                 return resLst
-            resLst.append((userId, channelId, newsId,
-                eventId, timestamp))
+            for topicIdx in topicIdxLst:
+                resLst.append((userId, topicIdx, newsId,
+                    eventId, timestamp))
         return resLst
     logRdd = sc.textFile(','.join(fileLst)).map(
                 lambda attrStr: json.loads(attrStr)
@@ -116,7 +152,7 @@ def getActionLog(sc, start_date, end_date):
                                 ('did' in attrDct) and \
                                 ('time' in attrDct)
             ).flatMap(
-                # userId, channelId, newsId, eventId, timestamp
+                # userId, topicIdx, newsId, eventId, timestamp
                 lambda attrDct: _(attrDct)
             )
     return logRdd
@@ -137,20 +173,20 @@ def getProportion(valLst):
 
 def getCategoryWeek(logRdd):
     categoryRdd = logRdd.filter(
-                lambda (userId, channelId, newsId, eventId, timestamp): \
+                lambda (userId, topicIdx, newsId, eventId, timestamp): \
                         eventId == ATRICLE_DISPLAY
             ).map(
-                lambda (userId, channelId, newsId, eventId, timestamp): \
-                        ((channelId, getWeekIndex(timestamp)), newsId)
+                lambda (userId, topicIdx, newsId, eventId, timestamp): \
+                        ((topicIdx, getWeekIndex(timestamp)), newsId)
             ).groupByKey(64).map(
-                lambda ((channelId, weekIdx), newsIdLst): \
-                        (weekIdx, (channelId, len(set(newsIdLst))))
+                lambda ((topicIdx, weekIdx), newsIdLst): \
+                        (weekIdx, (topicIdx, len(set(newsIdLst))))
             ).groupByKey().mapValues(getProportion)
     categoryLst = categoryRdd.collect()
     categoryDct = {}
-    for weekIdx, channelProLst in categoryLst:
-        for channelId, proportion in channelProLst:
-            categoryDct[(weekIdx, channelId)] = proportion
+    for weekIdx, topicProLst in categoryLst:
+        for topicIdx, proportion in topicProLst:
+            categoryDct[(weekIdx, topicIdx)] = proportion
     return categoryDct
 
 def combineInterest(weekChannelLst, bCategoryDct, latestWeekIdx):
@@ -158,37 +194,37 @@ def combineInterest(weekChannelLst, bCategoryDct, latestWeekIdx):
     weekCliDct = {}
     # news click for each week, N(t)
     totalCliCnt = 0
-    for weekIdx, channelId, newsCnt in weekChannelLst:
+    for weekIdx, topicIdx, newsCnt in weekChannelLst:
         #if weekIdx == latestWeekIdx:
         #    continue
         weekCliDct[weekIdx] = weekCliDct.get(weekIdx, 0) + newsCnt
         totalCliCnt += newsCnt
     # sum of post sum(p(category=c(i)|click) / p(category=c(i)))
-    for weekIdx, channelId, newsCnt in weekChannelLst:
+    for weekIdx, topicIdx, newsCnt in weekChannelLst:
         #if weekIdx == latestWeekIdx:
         #    continue
-        pCategory = bCategoryDct.value[(weekIdx, channelId)]
+        pCategory = bCategoryDct.value[(weekIdx, topicIdx)]
         pCategoryCli = newsCnt / weekCliDct[weekIdx]
         score = weekCliDct[weekIdx] * (pCategoryCli / pCategory)
-        channelPostDct[channelId] = channelPostDct.get(channelId, 0) + score
+        channelPostDct[topicIdx] = channelPostDct.get(topicIdx, 0) + score
     # user's news interests in the near future
     channelPostLst = []
-    for channelId, score in channelPostDct.items():
-        pCurCategory = bCategoryDct.value[(latestWeekIdx, channelId)]
+    for topicIdx, score in channelPostDct.items():
+        pCurCategory = bCategoryDct.value[(latestWeekIdx, topicIdx)]
         score = pCurCategory * (score + GRAVITY) / (totalCliCnt + GRAVITY)
-        channelPostLst.append((channelId, score))
+        channelPostLst.append((topicIdx, score))
     return channelPostLst
 
 def getUserInterest(logRdd, bCategoryDct, latestWeekIdx):
     interestRdd = logRdd.filter(
-                lambda (userId, channelId, newsId, eventId, timestamp): \
+                lambda (userId, topicIdx, newsId, eventId, timestamp): \
                         eventId == ARTICLE_CLICK
             ).map(
-                lambda (userId, channelId, newsId, eventId, timestamp): \
-                        ((userId, channelId, getWeekIndex(timestamp)), newsId)
+                lambda (userId, topicIdx, newsId, eventId, timestamp): \
+                        ((userId, topicIdx, getWeekIndex(timestamp)), newsId)
             ).groupByKey(64).map(
-                lambda ((userId, channelId, weekIdx), newsIdLst): \
-                        (userId, (weekIdx, channelId, len(set(newsIdLst))))
+                lambda ((userId, topicIdx, weekIdx), newsIdLst): \
+                        (userId, (weekIdx, topicIdx, len(set(newsIdLst))))
             ).groupByKey(64).mapValues(
                 lambda weekChannelLst: combineInterest(weekChannelLst,
                     bCategoryDct, latestWeekIdx)
