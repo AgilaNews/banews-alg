@@ -33,6 +33,7 @@ MAX_FEATURES = 100000
 N_TOPIC = 80
 MAX_ITER = 20
 VALID_POS_LST = [NOUN, ADJ, NAMES]
+en_nlp = spacy.load('en')
 
 def stripTag(htmlStr):
     reg = re.compile(r'<[^>]+>', re.S)
@@ -57,6 +58,15 @@ def loadData(dateObj, start_date, end_date):
             newsLst.append((vals[NEWS_ID], textStr.decode('utf-8')))
     return newsLst
 
+def stemDoc(newsDoc):
+    stemmedDocLst = []
+    for token in curDoc:
+        if token.pos not in VALID_POS_LST:
+            continue
+        stemmedDocLst.append(token.lemma_)
+    stemmedDocStr = ' '.join(stemmedDocLst)
+    return stemmedDocStr
+
 def preProcessSPACY(dateObj, start_date, end_date, withPreprocess):
     fileName = dateObj.strftime('%Y%m%d') + '_preprocess.dat'
     preNewsDocLst = []
@@ -69,17 +79,11 @@ def preProcessSPACY(dateObj, start_date, end_date, withPreprocess):
         newsLst = loadData(dateObj, start_date, end_date)
         print '%s, %s news loaded...' % \
                 (datetime.now().strftime('%s'), len(newsLst))
-        en_nlp = spacy.load('en')
         with open(os.path.join(PREPROCESS_DATA_DIR, fileName), 'w') as fp:
             (idLst, docLst) = zip(*newsLst)
             for idx, curDoc in enumerate(en_nlp.pipe(docLst,
                 batch_size=50, n_threads=4)):
-                stemmedDocLst = []
-                for token in curDoc:
-                    if token.pos not in VALID_POS_LST:
-                        continue
-                    stemmedDocLst.append(token.lemma_)
-                stemmedDocStr = ' '.join(stemmedDocLst)
+                stemmedDocStr = stemDoc(curDoc)
                 newsId = idLst[idx]
                 print >>fp, '%s,%s' % (newsId, stemmedDocStr)
                 preNewsDocLst.append(stemmedDocStr)
@@ -143,6 +147,63 @@ def dump(vectorizer, ldaModel, newsTopicArr, preNewsIdLst,
                     in topicDis.argsort()[:-topWords-1:-1]])
             print '\t', topWordStr
             print >>fp, '%s,%s' % (topicIdx, topWordStr)
+
+def getNewsChannel(start_date=None, end_date=None):
+    conn = MySQLdb.connect(host='10.8.22.123',
+                           user='banews_w',
+                           passwd=urllib.quote('MhxzKhl-Happy'),
+                           port=3306,
+                           db='banews')
+    conn.autocommit(True)
+    cursor = conn.cursor()
+    sqlCmd = '''
+select
+    url_sign,
+    title,
+    json_text
+from
+    tb_news
+where
+    (
+        channel_id not in (10011, 10012)
+    )
+    and (is_visible = 1)
+    and (
+        date(
+            from_unixtime(fetch_time)
+        ) BETWEEN '%s' and '%s'
+    )
+'''
+    if not start_date:
+        start_date = date(2015, 1, 1)
+    if not end_date:
+        end_date = date.today() + timedelta(days=1)
+    startDateStr = start_date.strftime('%Y-%m-%d')
+    endDateStr = end_date.strftime('%Y-%m-%d')
+    cursor.execute(sqlCmd % (startDateStr, endDateStr))
+    newsDocLst = []
+    for newsId, titleStr, docStr in cursor.fetchall():
+        textStr = titleStr + ' ' + stripTag(docStr)
+        newsDocLst.append((newsId, textStr.decode('utf-8')))
+    return newsDocLst
+
+def predict(newsDocLst):
+    with open(os.path.join(MODEL_DIR, 'ldaModel.m'), 'rb') as fp:
+        ldaModel = pickle.load(fp)
+    with open(os.path.join(MODEL_DIR, 'vectorizer.m'), 'rb') as fp:
+        vectorizer = pickle.load(fp)
+    newsIdLst, stemmedDocLst = [], []
+    for newsId, newsDoc in newsDocLst:
+        newsDoc = en_nlp(newsDoc)
+        stemmedDocStr = stemDoc(newsDoc)
+        newsIdLst.append(newsId)
+        stemmedDocLst.append(stemmedDocStr)
+    tfMatrix = vectorizer.transform(stemmedDocLst)
+    newsTopicArr = ldaModel.transform(tfMatrix)
+    for idx, topicArr in enumerate(newsTopicArr):
+        newsId = newsIdLst[idx]
+        print 'newsId:', newsId
+        print '\ttopics:', topicArr
 
 if __name__ == '__main__':
     if sys.argv[1] == 'train':
