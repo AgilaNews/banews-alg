@@ -58,7 +58,7 @@ def getTopTopics(topicStr):
     topicScoLst = [float(val) for val in topicStr.\
             strip().split(',')]
     totalSco = float(sum(topicScoLst))
-    if not total:
+    if not totalSco:
         return None
     topicIdxLst = []
     maxTopicIdx, maxTopicSco = 0, 0
