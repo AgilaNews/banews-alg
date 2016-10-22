@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 import json
 import urllib
 import MySQLdb
+from redis import Redis
 
 from pyspark import SparkContext
 
@@ -18,6 +19,17 @@ ARTICLE_COLLECT = '020205'
 GRAVITY = 10
 NEWS_TOPICS_PATH = '/data/userTopicDis/model/newsTopic.d'
 MIN_NEWS_TOPIC_WEIGHT = 0.2
+MIN_USER_ACTION_CNT = 5
+USER_TOPIC_INTEREST_DIR = '/user/limeng/userTopicInterest'
+ONLINE_NEWS_REDIS_CFG = {
+            'host': '10.8.7.6',
+            'port': 6379
+        }
+OFFLINE_NEWS_REDIS_CFG = {
+            'host': '10.8.6.7',
+            'port': 6379
+        }
+USER_TOPIC_HASH_KEY = 'BA_NEWS_TOPIC_KEY'
 
 def getNewsChannel(start_date=None, end_date=None):
     conn = MySQLdb.connect(host='10.8.22.123',
@@ -189,20 +201,16 @@ def getCategoryWeek(logRdd):
             categoryDct[(weekIdx, topicIdx)] = proportion
     return categoryDct
 
-def combineInterest(weekChannelLst, bCategoryDct, latestWeekIdx):
+def combineInterest(weekChannelLst, bCategoryDct):
     channelPostDct = {}
     weekCliDct = {}
     # news click for each week, N(t)
-    totalCliCnt = 0
+    totalCliCnt = 0.
     for weekIdx, topicIdx, newsCnt in weekChannelLst:
-        #if weekIdx == latestWeekIdx:
-        #    continue
-        weekCliDct[weekIdx] = weekCliDct.get(weekIdx, 0) + newsCnt
+        weekCliDct[weekIdx] = float(weekCliDct.get(weekIdx, 0)) + newsCnt
         totalCliCnt += newsCnt
     # sum of post sum(p(category=c(i)|click) / p(category=c(i)))
     for weekIdx, topicIdx, newsCnt in weekChannelLst:
-        #if weekIdx == latestWeekIdx:
-        #    continue
         pCategory = bCategoryDct.value[(weekIdx, topicIdx)]
         pCategoryCli = newsCnt / weekCliDct[weekIdx]
         score = weekCliDct[weekIdx] * (pCategoryCli / pCategory)
@@ -210,12 +218,18 @@ def combineInterest(weekChannelLst, bCategoryDct, latestWeekIdx):
     # user's news interests in the near future
     channelPostLst = []
     for topicIdx, score in channelPostDct.items():
-        pCurCategory = bCategoryDct.value[(latestWeekIdx, topicIdx)]
-        score = pCurCategory * (score + GRAVITY) / (totalCliCnt + GRAVITY)
+        score = (score + GRAVITY) / (totalCliCnt + GRAVITY)
         channelPostLst.append((topicIdx, score))
-    return channelPostLst
+    # normalizeing user's news interests
+    newChannelPostLst = []
+    totalSco = float(sum(map(lambda val: val[1], channelPostLst)))
+    sortedLst = sorted(channelPostLst, key=lambda val: val[1],
+            reverse=True)
+    for topicIdx, score in sortedLst:
+        newChannelPostLst.append((topicIdx, score/totalSco))
+    return (newChannelPostLst, totalCliCnt)
 
-def getUserInterest(logRdd, bCategoryDct, latestWeekIdx):
+def getUserInterest(logRdd, bCategoryDct):
     interestRdd = logRdd.filter(
                 lambda (userId, topicIdx, newsId, eventId, timestamp): \
                         eventId == ARTICLE_CLICK
@@ -227,9 +241,31 @@ def getUserInterest(logRdd, bCategoryDct, latestWeekIdx):
                         (userId, (weekIdx, topicIdx, len(set(newsIdLst))))
             ).groupByKey(64).mapValues(
                 lambda weekChannelLst: combineInterest(weekChannelLst,
-                    bCategoryDct, latestWeekIdx)
+                    bCategoryDct)
+            ).filter(
+                lambda (userId, (newsChannelPostLst, totalCliCnt)): \
+                        newsChannelPostLst and \
+                        (totalCliCnt > MIN_USER_ACTION_CNT)
             )
     return interestRdd
+
+def dump(interestRdd):
+    # dumping to redis
+    userInterestLst = interestRdd.collect()
+    print 'dump %s users topic interests...' % len(userInterestLst)
+    redisCli = Redis(host=OFFLINE_NEWS_REDIS_CFG['host'],
+                     port=OFFLINE_NEWS_REDIS_CFG['port'])
+    tmpDct = {}
+    totalCnt = 0
+    for userId, (channelPostLst, totalCliCnt) in userInterestLst:
+        totalCnt += 1
+        if len(tmpDct) >= 20:
+            print '%s remain....' % (len(userInterestLst) - totalCnt)
+            redisCli.hmset(USER_TOPIC_HASH_KEY, tmpDct)
+            tmpDct = {}
+        tmpDct[userId] = json.dumps((channelPostLst, totalCliCnt))
+    if len(tmpDct):
+        redisCli.hmset(USER_TOPIC_HASH_KEY, tmpDct)
 
 if __name__ == '__main__':
     sc = SparkContext(appName='newsTrend/limeng')
@@ -241,6 +277,6 @@ if __name__ == '__main__':
     categoryDct = getCategoryWeek(logRdd)
     bCategoryDct = sc.broadcast(categoryDct)
     # combine user's short-term & long-term interest
-    latestWeekIdx = getWeekIndex(end_date - timedelta(days=1))
-    getUserInterest(logRdd, bCategoryDct, latestWeekIdx)
+    interestRdd = getUserInterest(logRdd, bCategoryDct)
+    dump(interestRdd)
 

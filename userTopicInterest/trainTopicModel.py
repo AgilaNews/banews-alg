@@ -4,6 +4,7 @@ import sys
 import os
 import re
 import string
+import urllib
 from datetime import date, datetime, timedelta
 import MySQLdb
 import json
@@ -60,7 +61,7 @@ def loadData(dateObj, start_date, end_date):
 
 def stemDoc(newsDoc):
     stemmedDocLst = []
-    for token in curDoc:
+    for token in newsDoc:
         if token.pos not in VALID_POS_LST:
             continue
         stemmedDocLst.append(token.lemma_)
@@ -148,7 +149,7 @@ def dump(vectorizer, ldaModel, newsTopicArr, preNewsIdLst,
             print '\t', topWordStr
             print >>fp, '%s,%s' % (topicIdx, topWordStr)
 
-def getNewsChannel(start_date=None, end_date=None):
+def getSpanNews(start_date=None, end_date=None):
     conn = MySQLdb.connect(host='10.8.22.123',
                            user='banews_w',
                            passwd=urllib.quote('MhxzKhl-Happy'),
@@ -182,28 +183,43 @@ where
     endDateStr = end_date.strftime('%Y-%m-%d')
     cursor.execute(sqlCmd % (startDateStr, endDateStr))
     newsDocLst = []
-    for newsId, titleStr, docStr in cursor.fetchall():
+    for idx, (newsId, titleStr, docStr) in enumerate(cursor.fetchall()):
+        if idx % 100 == 0:
+            print 'fetch %s news...' % idx
         textStr = titleStr + ' ' + stripTag(docStr)
         newsDocLst.append((newsId, textStr.decode('utf-8')))
     return newsDocLst
+
+def loadPredictTopics():
+    newsIdSet = set()
+    with open(os.path.join(MODEL_DIR, 'newsTopic.d'), 'r') as fp:
+        for line in fp:
+            vals = line.strip().split('\t', 1)
+            if len(vals) != 2:
+                newsIdSet.add(vals[0])
+    return newsIdSet
 
 def predict(newsDocLst):
     with open(os.path.join(MODEL_DIR, 'ldaModel.m'), 'rb') as fp:
         ldaModel = pickle.load(fp)
     with open(os.path.join(MODEL_DIR, 'vectorizer.m'), 'rb') as fp:
         vectorizer = pickle.load(fp)
-    newsIdLst, stemmedDocLst = [], []
-    for newsId, newsDoc in newsDocLst:
-        newsDoc = en_nlp(newsDoc)
-        stemmedDocStr = stemDoc(newsDoc)
-        newsIdLst.append(newsId)
+    stemmedDocLst = [], []
+    (idLst, docLst) = zip(*newsDocLst)
+    for idx, curDoc in enumerate(en_nlp.pipe(docLst,
+            batch_size=50, n_threads=4)):
+        stemmedDocStr = stemDoc(curDoc)
         stemmedDocLst.append(stemmedDocStr)
     tfMatrix = vectorizer.transform(stemmedDocLst)
     newsTopicArr = ldaModel.transform(tfMatrix)
-    for idx, topicArr in enumerate(newsTopicArr):
-        newsId = newsIdLst[idx]
-        print 'newsId:', newsId
-        print '\ttopics:', topicArr
+    alreadyNewsIdSet = loadPredictTopics()
+    with open(os.path.join(MODEL_DIR, 'newsTopic.d'), 'a+') as fp:
+        for idx, topicArr in enumerate(newsTopicArr):
+            newsId = idLst[idx]
+            if newsId in alreadyNewsIdSet:
+                continue
+            print >>fp, '%s\t%s' % (newsId,
+                    ','.join(map(str, topicArr)))
 
 if __name__ == '__main__':
     if sys.argv[1] == 'train':
@@ -212,5 +228,12 @@ if __name__ == '__main__':
         start_date = end_date - timedelta(days=100)
         trainLDA(dateObj, start_date, end_date,
                 withPreprocess=False)
-    elif sys.argv[1] == 'test':
-        pass
+    elif sys.argv[1] == 'predict':
+        end_date = date.today() + timedelta(days=1)
+        start_date = date(2016, 10, 18)
+        newsDocLst = getSpanNews(start_date=start_date,
+                                 end_date=end_date)
+        print '%s new between %s and %s' % (len(newsDocLst),
+                                            start_date.strftime('%Y-%m-%d'),
+                                            end_date.strftime('%Y-%m-%d'))
+        predict(newsDocLst)
