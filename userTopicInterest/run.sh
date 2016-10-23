@@ -3,9 +3,9 @@
 export PYSPARK_PYTHON=/usr/bin/python2.7
 
 PYTHON_BIN='/usr/bin/python2.7'
-mysql_backup=true
+mysql_backup=false
 model_train=true
-user_interest=true
+user_interest=false
 today=`date +%Y%m%d`
 
 # backup news data from mysql
@@ -17,7 +17,7 @@ fi
 # train topic model based on news
 if [ "$model_train" = true ]; then
     echo "model training..."
-    $PYTHON_BIN trainTopicMode.py -d $today -a train
+    $PYTHON_BIN trainTopicModel.py -d $today -a train > train.log 2>&1
 fi
 
 # calculate users' topic interest distribution

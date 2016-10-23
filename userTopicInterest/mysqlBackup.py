@@ -2,9 +2,6 @@
 # -*- coding:utf-8 -*-
 import os
 import sys
-kDir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(kDir, '..'))
-
 import string
 import shutil
 import getopt
@@ -156,7 +153,6 @@ def main(store, tables):
                 store=store, user=user, port=port, password=password,
                 host=host, tables=tables)
         mysql_backup.backup()
-
     except(Exception):
         logging.exception("Mysql backups failed.")
     finally:

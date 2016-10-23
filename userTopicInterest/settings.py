@@ -6,7 +6,7 @@ import socket
 HOSTNAME = socket.gethostname()
 RD_HOSTNAME_LST = ['banews', ]
 SANDBOX_HOSTNAME_LST = ['sandbox-1', ]
-ONLINE_HOSTNAME_LST = ['spider-1', ]
+ONLINE_HOSTNAME_LST = ['spider-1', 'hadoop-1']
 if HOSTNAME in RD_HOSTNAME_LST:
     CURRENT_ENVIRONMENT_TAG = 'local'
 elif HOSTNAME in SANDBOX_HOSTNAME_LST:
