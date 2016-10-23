@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 import MySQLdb
 import json
 import pickle
+from optparse import OptionParser
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
 import spacy
@@ -113,7 +114,7 @@ def trainLDA(dateObj, start_date, end_date, withPreprocess=False):
     ldaModel = LatentDirichletAllocation(
                     n_topics=N_TOPIC,
                     max_iter=MAX_ITER,
-                    learning_method='online',
+                    learning_method='batch',
                     n_jobs=1,
                     verbose=1,
                     evaluate_every=5)
@@ -222,13 +223,18 @@ def predict(newsDocLst):
                     ','.join(map(str, topicArr)))
 
 if __name__ == '__main__':
-    if sys.argv[1] == 'train':
-        dateObj = date(2016, 10, 19)
+    parser = OptionParser()
+    parser.add_option('-a', '--action', dest='action', default='train')
+    parser.add_option('-d', '--date', dest='date', default='20161019')
+    parser.add_option('-p', '--preprocess', dest='preprocess', default=True)
+    (options, args) = parser.parse_args()
+    if options.action == 'train':
+        dateObj = datetime.strptime(options.date, '%Y%m%d').date()
         end_date = date.today() + timedelta(days=1)
-        start_date = end_date - timedelta(days=100)
+        start_date = end_date - timedelta(days=120)
         trainLDA(dateObj, start_date, end_date,
-                withPreprocess=False)
-    elif sys.argv[1] == 'predict':
+                withPreprocess=options.preprocess)
+    elif options.action == 'predict':
         end_date = date.today() + timedelta(days=1)
         start_date = date(2016, 10, 18)
         newsDocLst = getSpanNews(start_date=start_date,
