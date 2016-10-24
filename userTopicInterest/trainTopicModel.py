@@ -226,7 +226,8 @@ if __name__ == '__main__':
     parser = OptionParser()
     parser.add_option('-a', '--action', dest='action', default='train')
     parser.add_option('-d', '--date', dest='date', default='20161019')
-    parser.add_option('-p', '--preprocess', dest='preprocess', default=True)
+    parser.add_option('-p', '--preprocess', action='store_false',
+            dest='preprocess', default=True)
     (options, args) = parser.parse_args()
     if options.action == 'train':
         dateObj = datetime.strptime(options.date, '%Y%m%d').date()
