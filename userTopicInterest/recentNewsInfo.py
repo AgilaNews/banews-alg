@@ -74,37 +74,6 @@ def getTransferTime(timestamp):
     else:
         return None
 
-def getNewsMeta(sc):
-    conn = MySQLdb.connect(host='10.8.22.123',
-                           user='banews_w',
-                           passwd=urllib.quote('MhxzKhl-Happy'),
-                           port=3306,
-                           db='banews')
-    conn.autocommit(True)
-    cursor = conn.cursor()
-    sqlCmd = '''
-SELECT
-  `url_sign`,
-  `channel_id`,
-  `fetch_time`
-FROM
-  `tb_news`
-WHERE
-  (
-    `channel_id` NOT IN (10011, 10012)
-  ) AND (`is_visible` = 1);
-'''
-    cursor.execute(sqlCmd)
-    resLst = cursor.fetchall()
-    metaRdd = sc.parallelize(resLst, 64).map(
-            lambda (urlSign, chId, fetchTime): (urlSign, (int(chId),
-                getTransferTime(fetchTime)))
-        ).filter(
-            lambda (newsId, (chId, fetchTime)): ((NOW - fetchTime).total_seconds() / \
-                    (60 * 60.)) <= (24 * CHANNEL_THRESHOLD_DCT.get(chId, (1, 1))[1])
-        )
-    return metaRdd
-
 def calcSco(eventId, fetchTimeStamp):
     span = (NOW - fetchTimeStamp).total_seconds() / (60 * 60.)
     if eventId in (ARTICLE_LIKE, ARTICLE_COMMENT):
@@ -115,7 +84,6 @@ def calcSco(eventId, fetchTimeStamp):
     return sco
 
 def calcNewsScore(sc, start_date, end_date, dTopTopicDct):
-    newsMetaRdd = getNewsMeta(sc)
     fileLst = getSpanRdd(start_date, end_date)
     logRdd = sc.textFile(','.join(fileLst)).map(
             lambda dctStr: json.loads(dctStr)

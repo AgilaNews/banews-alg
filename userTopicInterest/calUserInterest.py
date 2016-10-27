@@ -20,7 +20,7 @@ ARTICLE_COLLECT = '020205'
 GRAVITY = 10
 NEWS_TOPICS_PATH = '/data/userTopicDis/model/newsTopic.d'
 MIN_NEWS_TOPIC_WEIGHT = 0.1
-MIN_USER_ACTION_CNT = 5
+MIN_USER_ACTION_CNT = 8
 USER_TOPIC_INTEREST_DIR = '/user/limeng/userTopicInterest'
 ALG_USER_TOPIC_KEY = 'ALG_USER_TOPIC_KEY'
 
@@ -131,6 +131,8 @@ def getActionLog(sc, start_date, end_date):
         timestamp = datetime.fromtimestamp(\
                 float(attrDct['time'])/1000.).date()
         if eventId == ATRICLE_DISPLAY:
+            if ('news' not in attrDct) or (not attrDct['news']):
+                return resLst
             for newsId in attrDct['news']:
                 if type(newsId) == int:
                     continue
@@ -254,6 +256,8 @@ def dump(interestRdd):
     redisCli = Redis(host=redisCfg['host'], port=redisCfg['port'])
     tmpDct = {}
     totalCnt = 0
+    if redisCli.exists(ALG_USER_TOPIC_KEY):
+        redisCli.delete(ALG_USER_TOPIC_KEY)
     for userId, (channelPostLst, totalCliCnt) in userInterestLst:
         totalCnt += 1
         if len(tmpDct) >= 20:
@@ -267,7 +271,7 @@ def dump(interestRdd):
 if __name__ == '__main__':
     sc = SparkContext(appName='newsTrend/limeng')
     end_date = date.today()
-    start_date = end_date - timedelta(days=3)
+    start_date = end_date - timedelta(days=60)
     logRdd = getActionLog(sc, start_date, end_date)
     logRdd = logRdd.cache()
     # category distribution each week

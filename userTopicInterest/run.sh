@@ -4,8 +4,8 @@ export PYSPARK_PYTHON=/usr/bin/python2.7
 
 PYTHON_BIN='/usr/bin/python2.7'
 mysql_backup=false
-model_train=true
-user_interest=false
+model_train=false
+user_interest=true
 recent_score=false
 today=`date +%Y%m%d`
 
@@ -27,10 +27,10 @@ if [ "$user_interest" = true ]; then
     /home/work/spark-1.6.2-bin-ba/bin/spark-submit \
         --master yarn-client --executor-memory 1G \
         --num-executors 10 --executor-cores 4 \
-        --driver-memory 2G --conf spark.akka.frameSize=100 \
+        --driver-memory 4G --conf spark.akka.frameSize=100 \
         --conf spark.shuffle.manager=SORT \
-        --conf spark.yarn.executor.memoryOverhead=2048 \
-        --conf spark.yarn.driver.memoryOverhead=2048 \
+        --conf spark.yarn.executor.memoryOverhead=4096 \
+        --conf spark.yarn.driver.memoryOverhead=4096 \
         calUserInterest.py
 fi
 

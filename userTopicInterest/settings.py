@@ -17,6 +17,7 @@ else:
     CURRENT_ENVIRONMENT_TAG = None
     print "Spider doesn't deploy on local, sandbox or online machine, Error!!!"
     exit(0)
+CURRENT_ENVIRONMENT_TAG = 'sandbox'
 ENVIRONMENT_CONFIG = {
     "local": {
         "mysql_config": {
@@ -71,14 +72,14 @@ ENVIRONMENT_CONFIG = {
     },
     "sandbox": {
         "mysql_config": {
-            "host": "127.0.0.1",
+            "host": "10.8.6.7",
             "port": 3306,
             "user": "banews_w",
             "passwd": "MhxzKhl-Happy",
             "database": "banews"
         },
         "scrapy_redis_config": {
-            "host": "127.0.0.1",
+            "host": "10.8.6.7",
             "port": 6379
         },
         "news_queue_redis_config": {
