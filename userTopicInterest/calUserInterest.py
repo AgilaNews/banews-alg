@@ -5,8 +5,9 @@ import json
 import urllib
 import MySQLdb
 from redis import Redis
-
 from pyspark import SparkContext
+
+import settings
 
 TODAY_LOG_DIR = '/banews/useraction.log-*'
 HISTORY_LOG_DIR = '/banews/useraction'
@@ -18,18 +19,10 @@ ARTICLE_LIKE = '020204'
 ARTICLE_COLLECT = '020205'
 GRAVITY = 10
 NEWS_TOPICS_PATH = '/data/userTopicDis/model/newsTopic.d'
-MIN_NEWS_TOPIC_WEIGHT = 0.2
+MIN_NEWS_TOPIC_WEIGHT = 0.1
 MIN_USER_ACTION_CNT = 5
 USER_TOPIC_INTEREST_DIR = '/user/limeng/userTopicInterest'
-ONLINE_NEWS_REDIS_CFG = {
-            'host': '10.8.7.6',
-            'port': 6379
-        }
-OFFLINE_NEWS_REDIS_CFG = {
-            'host': '10.8.6.7',
-            'port': 6379
-        }
-USER_TOPIC_HASH_KEY = 'BA_NEWS_TOPIC_KEY'
+ALG_USER_TOPIC_KEY = 'ALG_USER_TOPIC_KEY'
 
 def getNewsChannel(start_date=None, end_date=None):
     conn = MySQLdb.connect(host='10.8.22.123',
@@ -66,9 +59,7 @@ where
     newsChDct = dict(cursor.fetchall())
     return newsChDct
 
-def getTopTopics(topicStr):
-    topicScoLst = [float(val) for val in topicStr.\
-            strip().split(',')]
+def getTopTopics(topicScoLst):
     totalSco = float(sum(topicScoLst))
     if not totalSco:
         return None
@@ -93,7 +84,9 @@ def getNewsTopics():
             if len(vals) != 2:
                 continue
             (newsId, topicStr) = vals
-            newsTopicDct[newsId] = getTopTopics(topicStr)
+            topicScoLst = [float(val) for val in \
+                    topicStr.strip().split(',')]
+            newsTopicDct[newsId] = getTopTopics(topicScoLst)
     return newsTopicDct
 
 def getSpanFileLst(start_date, end_date, withToday=False):
@@ -250,22 +243,26 @@ def getUserInterest(logRdd, bCategoryDct):
     return interestRdd
 
 def dump(interestRdd):
+    env = settings.CURRENT_ENVIRONMENT_TAG
+    envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
+    redisCfg = envCfg.get('news_queue_redis_config', {})
+    if not redisCfg:
+        return None
     # dumping to redis
     userInterestLst = interestRdd.collect()
     print 'dump %s users topic interests...' % len(userInterestLst)
-    redisCli = Redis(host=OFFLINE_NEWS_REDIS_CFG['host'],
-                     port=OFFLINE_NEWS_REDIS_CFG['port'])
+    redisCli = Redis(host=redisCfg['host'], port=redisCfg['port'])
     tmpDct = {}
     totalCnt = 0
     for userId, (channelPostLst, totalCliCnt) in userInterestLst:
         totalCnt += 1
         if len(tmpDct) >= 20:
             print '%s remain....' % (len(userInterestLst) - totalCnt)
-            redisCli.hmset(USER_TOPIC_HASH_KEY, tmpDct)
+            redisCli.hmset(ALG_USER_TOPIC_KEY, tmpDct)
             tmpDct = {}
         tmpDct[userId] = json.dumps((channelPostLst, totalCliCnt))
     if len(tmpDct):
-        redisCli.hmset(USER_TOPIC_HASH_KEY, tmpDct)
+        redisCli.hmset(ALG_USER_TOPIC_KEY, tmpDct)
 
 if __name__ == '__main__':
     sc = SparkContext(appName='newsTrend/limeng')

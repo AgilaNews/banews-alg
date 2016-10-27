@@ -205,7 +205,7 @@ def predict(newsDocLst):
         ldaModel = pickle.load(fp)
     with open(os.path.join(MODEL_DIR, 'vectorizer.m'), 'rb') as fp:
         vectorizer = pickle.load(fp)
-    stemmedDocLst = [], []
+    stemmedDocLst = []
     (idLst, docLst) = zip(*newsDocLst)
     for idx, curDoc in enumerate(en_nlp.pipe(docLst,
             batch_size=50, n_threads=4)):
@@ -213,14 +213,11 @@ def predict(newsDocLst):
         stemmedDocLst.append(stemmedDocStr)
     tfMatrix = vectorizer.transform(stemmedDocLst)
     newsTopicArr = ldaModel.transform(tfMatrix)
-    alreadyNewsIdSet = loadPredictTopics()
-    with open(os.path.join(MODEL_DIR, 'newsTopic.d'), 'a+') as fp:
-        for idx, topicArr in enumerate(newsTopicArr):
-            newsId = idLst[idx]
-            if newsId in alreadyNewsIdSet:
-                continue
-            print >>fp, '%s\t%s' % (newsId,
-                    ','.join(map(str, topicArr)))
+    resLst = []
+    for idx, topicArr in enumerate(newsTopicArr):
+        newsId = idLst[idx]
+        resLst.append((newsId, topicArr))
+    return resLst
 
 if __name__ == '__main__':
     parser = OptionParser()
@@ -243,4 +240,12 @@ if __name__ == '__main__':
         print '%s new between %s and %s' % (len(newsDocLst),
                                             start_date.strftime('%Y-%m-%d'),
                                             end_date.strftime('%Y-%m-%d'))
-        predict(newsDocLst)
+        docTopicLst = predict(newsDocLst)
+        alreadyNewsIdSet = loadPredictTopics()
+        with open(os.path.join(MODEL_DIR, 'newsTopic.d'), 'a+') as fp:
+            for newsId, topicArr in docTopicLst:
+                if newsId in alreadyNewsIdSet:
+                    continue
+                print >>fp, '%s\t%s' % (newsId,
+                        ','.join(map(str, topicArr)))
+
