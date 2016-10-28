@@ -154,7 +154,7 @@ def dump(scoLst, topicLst):
 
 if __name__ == '__main__':
     end_date = date.today() + timedelta(days=1)
-    start_date = date.today() - timedelta(days=3)
+    start_date = date.today() - timedelta(days=2)
     newsDocLst = getSpanNews(start_date=start_date,
                              end_date=end_date)
     newsTopicLst = predict(newsDocLst)
