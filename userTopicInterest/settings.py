@@ -5,8 +5,8 @@ import socket
 # mysql, redis & es configuration of local, sandbox & online environment
 HOSTNAME = socket.gethostname()
 RD_HOSTNAME_LST = ['banews', ]
-SANDBOX_HOSTNAME_LST = ['sandbox-1', ]
-ONLINE_HOSTNAME_LST = ['spider-1', 'hadoop-1']
+SANDBOX_HOSTNAME_LST = ['sandbox-1', 'hadoop-1']
+ONLINE_HOSTNAME_LST = ['spider-1', ]
 if HOSTNAME in RD_HOSTNAME_LST:
     CURRENT_ENVIRONMENT_TAG = 'local'
 elif HOSTNAME in SANDBOX_HOSTNAME_LST:
@@ -71,14 +71,14 @@ ENVIRONMENT_CONFIG = {
     },
     "sandbox": {
         "mysql_config": {
-            "host": "127.0.0.1",
+            "host": "10.8.6.7",
             "port": 3306,
             "user": "banews_w",
             "passwd": "MhxzKhl-Happy",
             "database": "banews"
         },
         "scrapy_redis_config": {
-            "host": "127.0.0.1",
+            "host": "10.8.6.7",
             "port": 6379
         },
         "news_queue_redis_config": {
