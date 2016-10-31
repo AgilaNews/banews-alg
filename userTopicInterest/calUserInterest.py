@@ -13,11 +13,11 @@ TODAY_LOG_DIR = '/banews/useraction.log-*'
 HISTORY_LOG_DIR = '/banews/useraction'
 
 HADOOP_BIN = '/home/work/hadoop-2.6.0-cdh5.7.0/bin/hadoop'
-ATRICLE_DISPLAY = '020104'
+ARTICLE_DISPLAY = '020104'
 ARTICLE_CLICK = '020103'
 ARTICLE_LIKE = '020204'
 ARTICLE_COLLECT = '020205'
-GRAVITY = 10
+GRAVITY = 10.
 NEWS_TOPICS_PATH = '/data/userTopicDis/model/newsTopic.d'
 MIN_NEWS_TOPIC_WEIGHT = 0.1
 MIN_USER_ACTION_CNT = 10
@@ -122,7 +122,7 @@ def getActionLog(sc, start_date, end_date):
     # but can exist in mulitple topics
     newsTopicDct = getNewsTopics()
     bNewsTopicDct = sc.broadcast(newsTopicDct)
-    eventIdLst = [ARTICLE_CLICK, ATRICLE_DISPLAY]
+    eventIdLst = [ARTICLE_CLICK, ARTICLE_DISPLAY]
     fileLst = getSpanFileLst(start_date, end_date)
     def _(attrDct):
         resLst = []
@@ -130,7 +130,7 @@ def getActionLog(sc, start_date, end_date):
         eventId = attrDct['event-id'].encode('utf-8')
         timestamp = datetime.fromtimestamp(\
                 float(attrDct['time'])/1000.).date()
-        if eventId == ATRICLE_DISPLAY:
+        if eventId == ARTICLE_DISPLAY:
             if ('news' not in attrDct) or (not attrDct['news']):
                 return resLst
             for newsId in attrDct['news']:
@@ -172,16 +172,16 @@ def getWeekIndex(timestamp):
         return year * 100 + weekIdx
 
 def getProportion(valLst):
-    totalVal = sum(map(lambda val: val[1], valLst))
+    totalVal = float(sum(map(lambda val: val[1], valLst)))
     resLst = []
     for key, val in valLst:
-        resLst.append((key, float(val)/totalVal))
+        resLst.append((key, val/totalVal))
     return resLst
 
 def getCategoryWeek(logRdd):
     categoryRdd = logRdd.filter(
                 lambda (userId, topicIdx, newsId, eventId, timestamp): \
-                        eventId == ATRICLE_DISPLAY
+                        eventId == ARTICLE_DISPLAY
             ).map(
                 lambda (userId, topicIdx, newsId, eventId, timestamp): \
                         ((topicIdx, getWeekIndex(timestamp)), newsId)
