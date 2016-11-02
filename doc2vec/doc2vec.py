@@ -3,48 +3,72 @@ import sys
 import os
 import pickle
 import numpy
-
 import gensim
+import random
+
+from datetime import date, datetime
+from optparse import OptionParser
 from gensim.models.doc2vec import Doc2Vec, LabeledSentence
 
-KDIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = '/data/mysqlBackup/banews'
 PREPROCESS_DATA_DIR = '/data/userTopicDis'
 MODEL_DIR = '/data/doc2vec/model'
+SIM_FILE = '/data/doc2vec/similarity.txt'
 
 def loadData(dateObj):
     fileName = dateObj.strftime('%Y%m%d') + '_preprocess.dat'
     labelized = []
     print '%s, loading preprocess data...' % \
-            datetime.now().strftime('%s')
+            datetime.now().ctime()
     with open(os.path.join(PREPROCESS_DATA_DIR, fileName), 'r') as fp:
         for line in fp:
             vals = line.strip().split(',', 1)
-            if len(vals) != 2:
+            if len(vals)!=2:
                 continue
             (newsId, newsDoc) = vals
-            labelized.append(LabeledSentence(newsDoc, newsId))
-    return numpy.array(labelized)
+            labelized.append(LabeledSentence(
+                                words=newsDoc.split(),
+                                tags=[newsId]))
+    return labelized[:10000]
 
-def trainDoc2Vec(labelized, size=400, epoch_num=10) 
-    model_dm = Doc2Vec(min_count=1, window=10, size=size, sample=1e-5, negative=5, workers=2)
-    model_dbow = Doc2Vec(min_count=1, window=10, size=size, sample=1e-5, negative=5, dm=0, workers=2)
-    model_dm.build_vocab(labelized)
-    model_dbow.build_vocab(labelized)
+def trainDoc2Vec(labelized, size=400, epoch_num=10, model=None):
+    if not model:
+        model = Doc2Vec(min_count=1, window=10, size=size,
+                            sample=1e-5, negative=5, workers=2)
+
+    print '%s, building volcabulary for models...' % \
+            datetime.now().ctime()
+    model.build_vocab(labelized)
+
     for epoch in range(epoch_num):
-        print 'Traing Doc2Vec Model: %s times...' % epoch
+        print '%s, Epoch %s, training models...' %(datetime.now().ctime(), epoch)
         random.shuffle(labelized)
-        model_dm.train(labelized)
-        model_dbow.train(labelized)
-    return model_dm, model_dbow
+        model.train(labelized)
+    return model
 
-def dump(model_dm, model_dbow):
-    with open(os.path.join(MODEL_DIR, 'model_dm.m'),
-            'wb') as fp:
-        pickle.dump(model_dm, fp)
-    with open(os.path.join(MODEL_DIR, 'model_dbow.m'),
-            'wb') as fp:
-        pickle.dump(mode_dbow, fp)
+def dump(model):
+    with open(os.path.join(MODEL_DIR, 'model.m'), 'wb') as fp:
+        pickle.dump(model, fp)
+
+def loadModel():
+    with open(os.path.join(MODEL_DIR, 'model.m'), 'rb') as fp:
+        model = pickle.load(fp)
+    return model
+
+def saveSimilarity(dataset, model):
+    with open(SIM_FILE, 'w') as fp:
+        for item in docs:
+            wordlist = item[0]
+            idx = item[1][0]
+            vector = model.infer_vector(wordlist)
+            sims = model.docvecs.most_similar([vector],topn=8)
+            print "***Similar Docs for Article %s ***" % idx
+            print sims
+            fp.write(idx)
+            fp.write('\t')
+            fp.write(str(sims))
+            fp.write('\n')
+
 
 if __name__ == '__main__':
     parser = OptionParser()
@@ -53,17 +77,22 @@ if __name__ == '__main__':
     (options, args) = parser.parse_args()
 
     if options.action == 'train':
+        #train basic model and save it
+        startTime = datetime.now()
         dateObj = datetime.strptime(options.date, '%Y%m%d').date()
-        end_date = date.today() + timedelta(days=1)
-        start_date = end_date - timedelta(days=120)
-        trainLDA(dateObj, start_date, end_date,
-                withPreprocess=options.preprocess)
-    elif options.action == 'predict':
-        end_date = date.today() + timedelta(days=1)
-        start_date = date(2016, 10, 18)
-        newsDocLst = getSpanNews(start_date=start_date,
-                                 end_date=end_date)
-        print '%s new between %s and %s' % (len(newsDocLst),
-                                            start_date.strftime('%Y-%m-%d'),
-                                            end_date.strftime('%Y-%m-%d'))
-        predict(newsDocLst)
+        docs = loadData(dateObj)
+        model = trainDoc2Vec(docs)
+        dump(model)
+        saveSimilarity(docs, model)
+        print datetime.now() - startTime
+
+    elif options.action == 'update':
+        #re-train the original date with updated data
+        startTime = datetime.now()
+        model = loadModel()
+
+        dateObj = datetime.strptime(options.date, '%Y%m%d').date()
+        new_docs = loadData(dateObj)
+        trainDoc2Vec(new_docs, model=model)
+
+
