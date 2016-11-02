@@ -19,6 +19,11 @@ fi
 
 # calculate users' topic interest distribution
 if [ $1 = "user_interest" ]; then
+    echo "appending news topic distribution..."
+    end_date=`date -d '1 days' +%Y%m%d`
+    start_date=`date -d '-10 days' +%Y%m%d`
+    $PYTHON_BIN trainTopicModel.py -a predict_offline -s $start_date \
+        -e $end_date > user_interest.log 2>&1
     echo "user interest calculation..."
     /home/work/spark-1.6.2-bin-ba/bin/spark-submit \
         --master yarn-client --executor-memory 1G \

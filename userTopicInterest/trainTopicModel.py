@@ -209,7 +209,7 @@ def loadPredictTopics():
     with open(os.path.join(MODEL_DIR, 'newsTopic.d'), 'r') as fp:
         for line in fp:
             vals = line.strip().split('\t', 1)
-            if len(vals) != 2:
+            if len(vals) == 2:
                 newsIdSet.add(vals[0])
     return newsIdSet
 
@@ -241,6 +241,8 @@ if __name__ == '__main__':
     parser.add_option('-d', '--date', dest='date', default='20161019')
     parser.add_option('-p', '--preprocess', action='store_false',
             dest='preprocess', default=True)
+    parser.add_option('-s', '--start_date', dest='start_date')
+    parser.add_option('-e', '--end_date', dest='end_date')
     (options, args) = parser.parse_args()
     if options.action == 'train':
         dateObj = datetime.strptime(options.date, '%Y%m%d').date()
@@ -249,23 +251,31 @@ if __name__ == '__main__':
         trainLDA(dateObj, start_date, end_date,
                 withPreprocess=options.preprocess)
     elif options.action.startswith('predict_'):
-        end_date = date.today() + timedelta(days=1)
-        start_date = date.today() - timedelta(days=3)
+        start_date = datetime.strptime(options.start_date, '%Y%m%d').date()
+        end_date = datetime.strptime(options.end_date, '%Y%m%d').date()
         newsDocLst = getSpanNews(start_date=start_date,
                                  end_date=end_date)
         print '%s new between %s and %s' % (len(newsDocLst),
                                             start_date.strftime('%Y-%m-%d'),
                                             end_date.strftime('%Y-%m-%d'))
-        docTopicLst = predict(newsDocLst)
         if options.action.endswith('offline'):
             alreadyNewsIdSet = loadPredictTopics()
+            filterNewsDocLst = []
+            idx = 0
+            for newsId, textStr, publishTime in newsDocLst:
+                if newsId in alreadyNewsIdSet:
+                    continue
+                idx += 1
+                if idx % 100 == 0:
+                    print 'offline dealing %s...' % idx
+                filterNewsDocLst.append((newsId, textStr, publishTime))
+            docTopicLst = predict(filterNewsDocLst)
             with open(os.path.join(MODEL_DIR, 'newsTopic.d'), 'a+') as fp:
                 for newsId, topicArr in docTopicLst:
-                    if newsId in alreadyNewsIdSet:
-                        continue
                     print >>fp, '%s\t%s' % (newsId,
                             ','.join(map(str, topicArr)))
         elif options.action.endswith('online'):
+            docTopicLst = predict(newsDocLst)
             env = settings.CURRENT_ENVIRONMENT_TAG
             envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
             redisCfg = envCfg.get('news_queue_redis_config', {})
