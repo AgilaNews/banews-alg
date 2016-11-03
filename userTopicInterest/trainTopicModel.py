@@ -154,7 +154,7 @@ def dump(vectorizer, ldaModel, newsTopicArr, preNewsIdLst,
             print '\t', topWordStr
             print >>fp, '%s,%s' % (topicIdx, topWordStr)
 
-def getSpanNews(start_date=None, end_date=None):
+def getCursor():
     env = settings.CURRENT_ENVIRONMENT_TAG
     envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
     mysqlCfg = envCfg.get('mysql_config', {})
@@ -167,6 +167,10 @@ def getSpanNews(start_date=None, end_date=None):
                            db=mysqlCfg['database'])
     conn.autocommit(True)
     cursor = conn.cursor()
+    return cursor
+
+def getSpanNews(start_date=None, end_date=None):
+    cursor = getCursor()
     sqlCmd = '''
 select
     url_sign,
@@ -193,6 +197,38 @@ where
     startDateStr = start_date.strftime('%Y-%m-%d')
     endDateStr = end_date.strftime('%Y-%m-%d')
     cursor.execute(sqlCmd % (startDateStr, endDateStr))
+    newsDocLst = []
+    for idx, (newsId, titleStr, docStr, publishTime) in \
+            enumerate(cursor.fetchall()):
+        if idx % 100 == 0:
+            print 'fetch %s news...' % idx
+        textStr = titleStr + ' ' + stripTag(docStr)
+        newsDocLst.append((newsId,
+                           textStr.decode('utf-8'),
+                           publishTime))
+    return newsDocLst
+
+def getSpecificNews(newsIdLst):
+    newsIdStr = ",".join(map(lambda newsId: "'%s'"%newsId, newsIdLst))
+    cursor = getCursor()
+    sqlCmd = '''
+select
+    url_sign,
+    title,
+    json_text,
+    publish_time
+from
+    tb_news
+where
+    (
+        channel_id not in (10011, 10012)
+    )
+    and (is_visible = 1)
+    and (
+            url_sign in (%s)
+        )
+'''
+    cursor.execute(sqlCmd % newsIdStr)
     newsDocLst = []
     for idx, (newsId, titleStr, docStr, publishTime) in \
             enumerate(cursor.fetchall()):
@@ -292,3 +328,10 @@ if __name__ == '__main__':
                     for topicIdx in topTopicLst:
                         queueKey = NEWS_TOPIC_QUEUE_PREFIX % topicIdx
                         redisCli.zadd(queueKey, newsId, publishTime)
+    elif options.action == 'debug':
+        newsIdLst = ['LpmLmBcp2AU=', 'ire8mCYroUI=', 'GWQE4EclOgg=']
+        newsDocLst = getSpecificNews(newsIdLst)
+        docTopicLst = predict(newsDocLst)
+        for idx, (newsId, topicArr) in enumerate(docTopicLst):
+            topTopicLst = getTopTopics(topicArr)
+            print '%s. newsId:%s, topTopics:%s' % (idx, newsId, topTopicLst)
