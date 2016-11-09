@@ -5,7 +5,10 @@ import json
 import urllib
 import MySQLdb
 from redis import Redis
-from pyspark import SparkContext
+try:
+    from pyspark import SparkContext
+except:
+    pass
 
 import settings
 
@@ -17,12 +20,13 @@ ARTICLE_DISPLAY = '020104'
 ARTICLE_CLICK = '020103'
 ARTICLE_LIKE = '020204'
 ARTICLE_COLLECT = '020205'
-GRAVITY = 10.
+GRAVITY = 20.
 NEWS_TOPICS_PATH = '/data/userTopicDis/model/newsTopic.d'
 MIN_NEWS_TOPIC_WEIGHT = 0.1
-MIN_USER_ACTION_CNT = 10
+MIN_USER_ACTION_CNT = 20
 USER_TOPIC_INTEREST_DIR = '/user/limeng/userTopicInterest'
 ALG_USER_TOPIC_KEY = 'ALG_USER_TOPIC_KEY'
+ALG_TOPIC_GRAVITY_KEY = 'ALG_TOPIC_GRAVITY_KEY'
 
 def getNewsChannel(start_date=None, end_date=None):
     conn = MySQLdb.connect(host='10.8.22.123',
@@ -134,7 +138,7 @@ def getActionLog(sc, start_date, end_date):
             if ('news' not in attrDct) or (not attrDct['news']):
                 return resLst
             for newsId in attrDct['news']:
-                if type(newsId) == int:
+                if (type(newsId) == int) or (not newsId):
                     continue
                 newsId = newsId.encode('utf-8')
                 topicIdxLst = bNewsTopicDct.value.get(newsId, None)
@@ -267,6 +271,7 @@ def dump(interestRdd):
         tmpDct[userId] = json.dumps((channelPostLst, totalCliCnt))
     if len(tmpDct):
         redisCli.hmset(ALG_USER_TOPIC_KEY, tmpDct)
+    redisCli.set(ALG_TOPIC_GRAVITY_KEY, GRAVITY)
 
 if __name__ == '__main__':
     sc = SparkContext(appName='newsTrend/limeng')
