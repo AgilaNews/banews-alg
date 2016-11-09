@@ -21,7 +21,6 @@ if sys.getdefaultencoding() != default_encoding:
 KDIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = '/data/mysqlBackup/banews'
 PREPROCESS_DATA_DIR = '/data/userTopicDis'
-NEWS_TOPIC_QUEUE_PREFIX = 'ALG_TOPIC_NEWS_QUEUE_%i'
 MODEL_DIR = os.path.join(PREPROCESS_DATA_DIR, 'model')
 ATTRIBUTE_DIM = 9
 (NEWS_ID, SRC_URL, CHANNEL_ID, TITLE, SRC_NAME, \
@@ -31,24 +30,6 @@ N_TOPIC = 80
 VALID_POS_LST = [NOUN, ADJ, NAMES]
 en_nlp = spacy.load('en')
 
-NOW = datetime.now()
-CURRENT_AVAILABLE_CNT = 100
-CHANNEL_THRESHOLD_DCT = {
-        # channelId, (cntThr, dayThr)
-        10001: (10, 1),   # hot
-        10002: (2, 2),    # world
-        10003: (2, 1),    # sports
-        10004: (2, 1),    # entertainment
-        10005: (0.1, 2),  # games
-        10006: (0.1, 2),  # lifestyle
-        10007: (0.1, 2),  # business
-        10008: (0.1, 2),  # sci&tech
-        10009: (0.1, 2),  # opinion
-        10010: (2, 1),    # national
-        10013: (0.1, 2),  # NBA
-    }
-ALG_TOPIC_NEWS_SCO_KEY = 'ALG_TOPIC_NEWS_SCO_KEY'
-ALG_TOPIC_RATIO_KEY = 'ALG_TOPIC_RATIO_KEY'
 NEWS_TOPIC_SIMILARITY_KEY = 'NEWS_TOPIC_SIMILARITY_KEY'
 
 def stripTag(htmlStr):
@@ -136,60 +117,6 @@ def predict(newsDocLst):
         resLst.append((newsId, topicArr))
     return resLst
 
-def getTransferTime(timestamp):
-    if timestamp:
-        timestamp = datetime.fromtimestamp(timestamp)
-        return timestamp
-    else:
-        return None
-
-def calcSco(eventId, fetchTimeStamp):
-    span = (NOW - fetchTimeStamp).total_seconds() / (60 * 60.)
-    if eventId in (ARTICLE_LIKE, ARTICLE_COMMENT):
-        sco = 3.
-    else:
-        sco = 1.
-    sco *= pow(0.5, span / 8)
-    return sco
-
-def calcNewsScore(sc, start_date, end_date, dTopTopicDct):
-    fileLst = getSpanRdd(start_date, end_date)
-    logRdd = sc.textFile(','.join(fileLst)).map(
-            lambda dctStr: json.loads(dctStr)
-        ).map(
-            lambda attrDct: (attrDct.get('event-id'),
-                             attrDct.get('did'),
-                             attrDct.get('news_id'),
-                             getTransferTime(float(attrDct.get('time'))/1000))
-        ).filter(
-            lambda (eventId, did, newsId, timestamp): \
-                    (eventId in VALID_EVENTID_LST) \
-                    and (((NOW - timestamp).total_seconds() / (60 * 60.)) <= 24)
-        ).cache()
-    # score foreach news
-    scoRdd = logRdd.map(
-            lambda (eventId, did, newsId, timestamp): (newsId,
-                calcSco(eventId, timestamp))
-        ).reduceByKey(
-            lambda x, y: x + y
-        ).filter(
-            lambda (newsId, sco): newsId in dTopTopicDct.value
-        ).cache()
-    newsScoLst = scoRdd.collect()
-    # topic distribution recently
-    topicRdd = logRdd.map(
-            lambda (eventId, did, newsId, timestamp): \
-                    (newsId, set([did]))
-        ).reduceByKey(
-            lambda x, y: x | y, 64
-        ).flatMap(
-            lambda (newsId, userIdSet): [(topicIdx, len(userIdSet)) \
-                    for topicIdx in dTopTopicDct.value.get(newsId, [])]
-        ).reduceByKey(
-            lambda x, y: x + y
-        )
-    recentTopicLst = topicRdd.collect()
-    return (newsScoLst, recentTopicLst)
 
 def dump(simTopicDct):
     env = settings.CURRENT_ENVIRONMENT_TAG
@@ -223,8 +150,15 @@ def calTopicSim(newsTopicLst):
             newsIdx, topicLstx = newsTopicLst[i]
             newsIdy, topicLsty = newsTopicLst[j]
             cos_sim = cos_similarity(topicLstx, topicLsty)
-            simTopicDct[(newsIdx, newsIdy)] = cos_sim
-            simTopicDct[(newsIdy, newsIdx)] = cos_sim
+            if not simTopicDct.get(newsIdx):
+                simTopicDct[newsIdx] = {newsIdy:cos_sim}
+            else:
+                simTopicDct[newsIdx][newsIdy] = cos_sim
+            if not simTopicDct.get(newsIdy):
+                simTopicDct[newsIdy] = {newsIdx:cos_sim}
+            else:
+                simTopicDct[newsIdy][newsIdx] = cos_sim
+                
     return simTopicDct
 
 def cos_similarity(a, b):
