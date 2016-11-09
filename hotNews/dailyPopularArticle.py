@@ -3,6 +3,7 @@ import os
 import json
 from pyspark import SparkContext
 from datetime import date, datetime, timedelta
+from optparse import OptionParser
 import MySQLdb
 import urllib
 from redis import Redis
@@ -169,8 +170,30 @@ def calcNewsUV(sc, start_date, end_date):
                 redisCli_online.rpush(REDIS_POPULAR_NEWS_PREFIX % curChannelId, newsId)
                 redisCli_sandbox.rpush(REDIS_POPULAR_NEWS_PREFIX % curChannelId, newsId)
 
+def temporaryChannelPush(newsIdLst, channelId):
+    redisCli_online = Redis(host='10.8.7.6', port=6379)
+    redisCli_sandbox = Redis(host='10.8.16.33', port=6379)
+    for idx, newsId in enumerate(newsIdLst):
+        print '%s. insert newsId:%s' % (idx, newsId)
+        redisCli_online.lpush(REDIS_POPULAR_NEWS_PREFIX % channelId, newsId)
+        redisCli_sandbox.lpush(REDIS_POPULAR_NEWS_PREFIX % channelId, newsId)
+
 if __name__ == '__main__':
     sc = SparkContext(appName='calcUV/limeng@agilanews.com')
     end_date = date.today() + timedelta(days=1)
     start_date = end_date - timedelta(days=2)
-    calcNewsUV(sc, start_date, end_date)
+    parser = OptionParser()
+    parser.add_option('-a', '--action', dest='action')
+    (options, args) = parser.parse_args()
+    if options.action == 'popular':
+        calcNewsUV(sc, start_date, end_date)
+    elif options.action == 'temporary':
+        TEMP_NEWSID_LST = ['YMIV9IXLfSA=',
+                           'fwVmesWbsR8=',
+                           'zClqJ2fEyQU=',
+                           'zDM7aM182GU=',
+                           'UWR9cebekfE=',
+                           'lHMo1X0d678=',
+                           'E6b+Y1wlqJE=']
+        temporaryChannelPush(TEMP_NEWSID_LST, 10001)
+

@@ -8,4 +8,4 @@ export PYSPARK_PYTHON=/usr/bin/python2.7
     --conf spark.shuffle.manager=SORT \
     --conf spark.yarn.executor.memoryOverhead=2048 \
     --conf spark.yarn.driver.memoryOverhead=2048 \
-    dailyPopularArticle.py
+    dailyPopularArticle.py -a 'popular'
