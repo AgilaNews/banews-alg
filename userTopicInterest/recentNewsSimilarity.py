@@ -1,12 +1,15 @@
 # -*- coding:utf-8 -*-
 import os
+import re
 import sys
 import json
+import numpy
 from datetime import date, datetime, timedelta
 import MySQLdb
 import urllib
 from redis import Redis
 
+import pickle
 import spacy
 from spacy.parts_of_speech import (NOUN, ADJ, NAMES)
 import settings
@@ -201,20 +204,22 @@ def dump(simTopicDct):
         redisCli.delete(NEWS_TOPIC_SIMILARITY_KEY)
     tmpDct= {}
     for (key, value) in simTopicDct:
-        if len(tmpDct) >=20:
+        if len(tmpDct) >=50:
+            print 'dumping %s news topic similarity...' % len(tmpDct)
             redisCli.hmset(NEWS_TOPIC_SIMILARITY_KEY,
                             tmpDct)
             tmpDct = {}
         tmpDct[key] = value
     if len(tmpDct):
+        print 'dumping %s news topic similarity...' % len(tmpDct)
         redisCli.hmset(NEWS_TOPIC_SIMILARITY_KEY,
                         tmpDct)
 
 def calTopicSim(newsTopicLst):
     numNews = len(newsTopicLst)
     simTopicDct = {}
-    for i in range(numTopicNews):
-        for j in range(i, newsTopicNews):
+    for i in range(numNews):
+        for j in range(i, numNews):
             newsIdx, topicLstx = newsTopicLst[i]
             newsIdy, topicLsty = newsTopicLst[j]
             cos_sim = cos_similarity(topicLstx, topicLsty)
@@ -236,14 +241,13 @@ def cos_similarity(a, b):
 
 if __name__ == '__main__':
     end_date = date.today() + timedelta(days=1)
-    start_date = date.today() - timedelta(days=2)
+    start_date = date.today() - timedelta(days=1)
     #select news(id, title, json_text, time) from mysql
     #set a timespan to calculate similarity
     newsDocLst = getSpanNews(start_date=start_date,
                              end_date=end_date)
     #get topic distribution of each news in newsDocLst(newsId, topicArr)
     newsTopicLst = predict(newsDocLst)
-    print newsTopicLst[:5]
     #calculate topic similarity of recent news
     simTopicDct = calTopicSim(newsTopicLst)
     #dump news topic similarity to redis:NEWS_TOPIC_SIMILARITY_KEY
