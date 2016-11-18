@@ -13,13 +13,13 @@ import pickle
 import spacy
 from spacy.parts_of_speech import (NOUN, ADJ, NAMES)
 import settings
+from simhash import simhash
 
 default_encoding = 'utf-8'
 if sys.getdefaultencoding() != default_encoding:
     reload(sys)
     sys.setdefaultencoding(default_encoding)
 KDIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = '/data/mysqlBackup/banews'
 PREPROCESS_DATA_DIR = '/data/userTopicDis'
 MODEL_DIR = os.path.join(PREPROCESS_DATA_DIR, 'model')
 ATTRIBUTE_DIM = 9
@@ -31,6 +31,9 @@ VALID_POS_LST = [NOUN, ADJ, NAMES]
 en_nlp = spacy.load('en')
 
 NEWS_TOPIC_SIMILARITY_KEY = 'NEWS_TOPIC_SIMILARITY_KEY'
+SIMILARITY_MAX_THRESHOLD = 0.90
+DISTANCE_MIN_THRESHOLD = 12
+
 
 def stripTag(htmlStr):
     reg = re.compile(r'<[^>]+>', re.S)
@@ -102,6 +105,7 @@ def predict(newsDocLst):
     with open(os.path.join(MODEL_DIR, 'vectorizer.m'), 'rb') as fp:
         vectorizer = pickle.load(fp)
     stemmedDocLst = []
+    simhashLst = []
     (idLst, docLst, publishTimeLst) = zip(*newsDocLst)
     for idx, curDoc in enumerate(en_nlp.pipe(docLst,
             batch_size=50, n_threads=4)):
@@ -109,13 +113,17 @@ def predict(newsDocLst):
             print 'preprocessing %s...' % idx
         stemmedDocStr = stemDoc(curDoc)
         stemmedDocLst.append(stemmedDocStr)
+        #calculate simhash similarity
+        hashValue = simhash(stemmedDocStr.lower().split())
+        simhashLst.append(hashValue)
+
     tfMatrix = vectorizer.transform(stemmedDocLst)
     newsTopicArr = ldaModel.transform(tfMatrix)
     resLst = []
     for idx, topicArr in enumerate(newsTopicArr):
         newsId = idLst[idx]
         resLst.append((newsId, topicArr))
-    return resLst
+    return resLst, simhashLst
 
 
 def dump(simTopicDct):
@@ -130,19 +138,19 @@ def dump(simTopicDct):
     if redisCli.exists(NEWS_TOPIC_SIMILARITY_KEY):
         redisCli.delete(NEWS_TOPIC_SIMILARITY_KEY)
     tmpDct= {}
-    for (key, value) in simTopicDct:
+    for key in simTopicDct:
         if len(tmpDct) >=50:
             print 'dumping %s news topic similarity...' % len(tmpDct)
             redisCli.hmset(NEWS_TOPIC_SIMILARITY_KEY,
                             tmpDct)
             tmpDct = {}
-        tmpDct[key] = value
+        tmpDct[key] = simTopicDct[key]
     if len(tmpDct):
         print 'dumping %s news topic similarity...' % len(tmpDct)
         redisCli.hmset(NEWS_TOPIC_SIMILARITY_KEY,
                         tmpDct)
 
-def calTopicSim(newsTopicLst):
+def calTopicSim(newsTopicLst, newsDocLst, simhashLst):
     numNews = len(newsTopicLst)
     simTopicDct = {}
     for i in range(numNews):
@@ -150,15 +158,18 @@ def calTopicSim(newsTopicLst):
             newsIdx, topicLstx = newsTopicLst[i]
             newsIdy, topicLsty = newsTopicLst[j]
             cos_sim = cos_similarity(topicLstx, topicLsty)
+            flag = 1
+            hamming_distance = simhashLst[i].hamming_distance(simhashLst[j])
+            if hamming_distance < DISTANCE_MIN_THRESHOLD:
+                flag = -1
             if not simTopicDct.get(newsIdx):
-                simTopicDct[newsIdx] = {newsIdy:cos_sim}
+                simTopicDct[newsIdx] = {newsIdy:cos_sim*flag}
             else:
-                simTopicDct[newsIdx][newsIdy] = cos_sim
+                simTopicDct[newsIdx][newsIdy] = cos_sim*flag
             if not simTopicDct.get(newsIdy):
-                simTopicDct[newsIdy] = {newsIdx:cos_sim}
+                simTopicDct[newsIdy] = {newsIdx:cos_sim*flag}
             else:
-                simTopicDct[newsIdy][newsIdx] = cos_sim
-                
+                simTopicDct[newsIdy][newsIdx] = cos_sim*flag
     return simTopicDct
 
 def cos_similarity(a, b):
@@ -173,6 +184,13 @@ def cos_similarity(a, b):
     else:
         return a.dot(b)/(a.dot(a)*b.dot(b))**0.5
 
+def printDuplicate(simTopicDct):
+    for item in simTopicDct:
+        newsDct = simTopicDct[item]
+        for news in newsDct:
+            if newsDct[news]<=0 and news!=item:
+                print item, news, newsDct[news]
+
 if __name__ == '__main__':
     end_date = date.today() + timedelta(days=1)
     start_date = date.today() - timedelta(days=1)
@@ -181,8 +199,9 @@ if __name__ == '__main__':
     newsDocLst = getSpanNews(start_date=start_date,
                              end_date=end_date)
     #get topic distribution of each news in newsDocLst(newsId, topicArr)
-    newsTopicLst = predict(newsDocLst)
+    newsTopicLst, simhashLst = predict(newsDocLst)
     #calculate topic similarity of recent news
-    simTopicDct = calTopicSim(newsTopicLst)
+    simTopicDct = calTopicSim(newsTopicLst, newsDocLst, simhashLst)
+    #printDuplicate(simTopicDct)
     #dump news topic similarity to redis:NEWS_TOPIC_SIMILARITY_KEY
     dump(simTopicDct)
