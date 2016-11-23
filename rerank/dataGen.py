@@ -7,6 +7,7 @@ from random import random
 import json
 from optparse import OptionParser
 import MySQLdb
+from redis import Redis
 import urllib
 
 from pyspark import SparkContext
@@ -29,7 +30,9 @@ HOUR = 60 * 60
 POSITIVE_TAG = 1
 NEGATIVE_TAG = -1
 FEATURE_MAP_NAME = 'feature_mapping.listPage'
-SAMPLE_FILENAME = '/data/limeng/svm/sample.dat'
+DATA_DIR = '/data/models/liblinear'
+ALG_NEWS_FEATURE_KEY = 'ALG_NEWS_FEATURE_KEY'
+MIN_FEATURE_VALUE = 0.001
 
 def getSpanFileLst(start_date, end_date, withToday=False):
     fileLst = []
@@ -206,14 +209,9 @@ where
                 contentLen, pubTime, fetTime)
     return newsFeatureDct
 
-def combineFeatures(logRdd, start_date, end_date, sc):
+def combineFeatures(logRdd, bMetaFeatureDct, isDaily=False):
     # news action features
     actFeatureRdd = getNewsActionFeatures(logRdd)
-    # news meta features
-    news_start_date = start_date - timedelta(days=10)
-    metaFeatureDct = getNewsMetaFeatures(
-            start_date=news_start_date, end_date=end_date)
-    bMetaFeatureDct = sc.broadcast(metaFeatureDct)
     def _(newsId, actFeatureLst, bMetaFeatureDct):
         (displayCnt, clickCnt, likeCnt, commentCnt,
                 clickRat, likeRat, commentRat) = actFeatureLst
@@ -221,6 +219,9 @@ def combineFeatures(logRdd, start_date, end_date, sc):
             return (newsId, None)
         (titleLen, imageCnt, videoCnt, contentLen,
                 pubTime, fetTime) = bMetaFeatureDct.value[newsId]
+        if isDaily:
+            pubTime = int(pubTime.strftime('%s'))
+            fetTime = int(fetTime.strftime('%s'))
         featureLst = [displayCnt, clickCnt, likeCnt,
                 commentCnt, clickRat, likeRat, commentRat,
                 titleLen, imageCnt, videoCnt, contentLen,
@@ -278,8 +279,12 @@ def getSampleLog(maxLabelLogRdd, featureRdd):
                 fetTime) = featureLst
         fetTimeInterval = (timestamp - fetTime).total_seconds()
         fetTimeInterval /= HOUR
+        if fetTimeInterval <= 0:
+            fetTimeInterval = MIN_FEATURE_VALUE
         pubTimeInterval = (timestamp - pubTime).total_seconds()
         pubTimeInterval /= HOUR
+        if pubTimeInterval <= 0:
+            pubTimeInterval = MIN_FEATURE_VALUE
         featureDct = {'HISTORY_DISPLAY_COUNT': displayCnt,
                       'HISTORY_READ_COUNT': clickCnt,
                       'HISTORY_LIKE_COUNT': likeCnt,
@@ -345,11 +350,19 @@ if __name__ == '__main__':
     parser.add_option('-a', '--action', dest='action')
     parser.add_option('--clickRatio', dest='clickRatio', default=1.)
     parser.add_option('--displayRatio', dest='displayRatio', default=1.)
+    parser.add_option('--dataDir', dest="dataDir", default='')
     (options, args) = parser.parse_args()
 
     start_date = datetime.strptime(options.start_date, '%Y%m%d').date()
     end_date = datetime.strptime(options.end_date, '%Y%m%d').date()
     logRdd = getOriginalLog(start_date, end_date, sc)
+    global DATA_DIR
+    global SAMPLE_FILENAME
+    if not options.dataDir:
+        print 'data directory missing, error!'
+        exit(0)
+    DATA_DIR = options.dataDir
+    SAMPLE_FILENAME = os.path.join(DATA_DIR, 'sample.dat')
     maxLabelLogRdd = getMaxLabelLog(logRdd)
     if options.action == 'verbose':
         categoryRdd = maxLabelLogRdd.map(
@@ -364,7 +377,12 @@ if __name__ == '__main__':
             print '%s. eventId:%s, cnt:%s' % (idx, category, cnt)
         print '=' * 60
     elif options.action == 'sample':
-        featureRdd = combineFeatures(logRdd, start_date, end_date, sc)
+        # news meta features
+        news_start_date = start_date - timedelta(days=10)
+        metaFeatureDct = getNewsMetaFeatures(
+                start_date=news_start_date, end_date=end_date)
+        bMetaFeatureDct = sc.broadcast(metaFeatureDct)
+        featureRdd = combineFeatures(logRdd, bMetaFeatureDct)
         maxLabelLogRdd = maxLabelLogRdd.map(
                 lambda ((did, newsId), (eventId, timestamp)): \
                         (newsId, (did, eventId, timestamp))
@@ -374,5 +392,31 @@ if __name__ == '__main__':
         displayRatio = float(options.displayRatio)
         sample(sampleRdd, clickRatio, displayRatio)
     elif options.action == 'daily':
-        pass
-
+        end_date = date.today() + timedelta(days=1)
+        start_date = end_date - timedelta(days=5)
+        metaFeatureDct = getNewsMetaFeatures(
+                start_date=start_date, end_date=end_date)
+        bMetaFeatureDct = sc.broadcast(metaFeatureDct)
+        featureRdd = combineFeatures(logRdd, bMetaFeatureDct,
+                isDaily=True)
+        newsFeatureLst = featureRdd.collect()
+        env = settings.CURRENT_ENVIRONMENT_TAG
+        envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
+        redisCfg = envCfg.get('news_queue_redis_config', {})
+        if not redisCfg:
+            print 'redis configuration not exist!'
+            exit(1)
+        redisCli = Redis(host=redisCfg['host'], port=redisCfg['port'])
+        if redisCli.exists(ALG_NEWS_FEATURE_KEY):
+            redisCli.delete(ALG_NEWS_FEATURE_KEY)
+        totalCnt = 0
+        tmpDct = {}
+        for idx, (newsId, featureLst) in enumerate(newsFeatureLst):
+            totalCnt += 1
+            if len(tmpDct) >= 20:
+                print '%s remaing...' % (len(newsFeatureLst) - totalCnt)
+                redisCli.hmset(ALG_NEWS_FEATURE_KEY, tmpDct)
+                tmpDct = {}
+            tmpDct[newsId] = json.dumps(featureLst)
+        if len(tmpDct):
+            redisCli.hmset(ALG_NEWS_FEATURE_KEY, tmpDct)
