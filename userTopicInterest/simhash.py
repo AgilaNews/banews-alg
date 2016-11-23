@@ -1,7 +1,7 @@
 # coding=utf-8
 
 class simhash:
-    def __init__(self, tokens='', hashbits=128):
+    def __init__(self, tokens='', hashbits=64):
         self.hashbits = hashbits
         self.hash = self.simhash(tokens)
 
