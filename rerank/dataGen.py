@@ -30,7 +30,7 @@ HOUR = 60 * 60
 POSITIVE_TAG = 1
 NEGATIVE_TAG = -1
 FEATURE_MAP_NAME = 'feature_mapping.listPage'
-DATA_DIR = '/data/models/liblinear'
+#DATA_DIR = '/data/models/liblinear'
 ALG_NEWS_FEATURE_KEY = 'ALG_NEWS_FEATURE_KEY'
 MIN_FEATURE_VALUE = 0.001
 
