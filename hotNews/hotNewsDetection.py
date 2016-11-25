@@ -78,6 +78,9 @@ def countHammingDis(hash1, hash2):
     for i in range(length):
         if hash1[i]!=hash2[i]:
             dis+=1
+    print hash1
+    print hash2
+    exit(0)
     return dis
 
 def findHotNews(newsLst):
@@ -101,7 +104,7 @@ def findHotNews(newsLst):
 
 def printDct(newsDct):
     for news in newsDct:
-        if len(newsDct)>20:
+        if len(newsDct)>30:
             print news, newsDct[news]
 
 if __name__ == '__main__':
