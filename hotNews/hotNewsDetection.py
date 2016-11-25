@@ -20,7 +20,7 @@ ATTRIBUTE_DIM = 9
         PUBLISH_TIME, FETCH_TIME, CONTENT, TYPE) = \
         range(ATTRIBUTE_DIM)
 
-MINTHRE_HAMMING_DISTANCE = 3
+MINTHRE_HAMMING_DISTANCE = 7
 
 def getSpanNews(start_date=None, end_date=None):
     env = settings.CURRENT_ENVIRONMENT_TAG
@@ -40,7 +40,9 @@ select
     url_sign,
     publish_time,
     source_name,
-    related_sign
+    related_sign,
+    title,
+    json_text
 from
     tb_news
 where
@@ -62,25 +64,23 @@ where
     endDateStr = end_date.strftime('%Y-%m-%d')
     cursor.execute(sqlCmd % (startDateStr, endDateStr))
     newsLst = []
-    for idx, (newsId, publishTime, source_name, relatedSign) in \
+    for idx, (newsId, publishTime, source_name, relatedSign, title, doc) in \
             enumerate(cursor.fetchall()):
         if idx % 100 == 0:
             print 'fetch %s news...' % idx
-        newsLst.append((newsId, publishTime, source_name, relatedSign))
+        newsLst.append((newsId, publishTime, source_name, relatedSign,
+                        title.decode('utf-8'), doc.decode('utf-8')))
     return newsLst
 
 def countHammingDis(hash1, hash2):
     if len(hash1)!= len(hash2):
-        print "not allow different length", hash1, hash2
-        exit(0)
+        #print "not allow different length"
+        return -1
     length = len(hash1)
     dis = 0
     for i in range(length):
         if hash1[i]!=hash2[i]:
             dis+=1
-    print hash1
-    print hash2
-    exit(0)
     return dis
 
 def findHotNews(newsLst):
@@ -91,6 +91,9 @@ def findHotNews(newsLst):
             news1 = newsLst[i]
             news2 = newsLst[j]
             dis = countHammingDis(news1[3], news2[3])
+            if dis == -1:
+                continue
+            #print 'get hamming distance...', dis
             if dis<=MINTHRE_HAMMING_DISTANCE and \
                     news1[2]!=news2[2]:
                 if simDct.has_key(news1[0]):
@@ -102,10 +105,14 @@ def findHotNews(newsLst):
     return simDct
 
 
-def printDct(newsDct):
+def printDct(newsDct, newsLst):
     for news in newsDct:
-        if len(newsDct)>30:
+        if len(newsDct[news])>10:
+            print '*'*40
             print news, newsDct[news]
+            for idx, newsId in newsDct[news]:
+                print '&&&',
+                print newsId+','+newsLst[idx][4]+','+newsLst[idx][5][:50]
 
 if __name__ == '__main__':
     end_date = date.today() + timedelta(days=1)
@@ -114,4 +121,4 @@ if __name__ == '__main__':
                              end_date=end_date)
 
     hotNews = findHotNews(newsLst)
-    printDct(hotNews)
+    printDct(hotNews, newsLst)

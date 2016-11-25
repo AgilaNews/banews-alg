@@ -99,6 +99,7 @@ def updateSimhash(newsLst):
     env = settings.CURRENT_ENVIRONMENT_TAG
     envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
     mysqlCfg = envCfg.get('mysql_config', {})
+    print mysqlCfg
     if not mysqlCfg:
         return None
     conn = MySQLdb.connect(host=mysqlCfg['host'],
@@ -117,7 +118,7 @@ where
     for idx, (newsId, related_sign) in enumerate(newsLst):
         if idx % 100 == 0:
             print 'update %s news: %s, %s...' % (idx, newsId, related_sign) 
-        cursor.execute(sqlCmd % (related_sign, idx))
+        cursor.execute(sqlCmd % (related_sign, newsId))
 
 def predict(newsDocLst):
     print 'calculating simhash value of %s news...' % len(newsDocLst)
@@ -141,7 +142,7 @@ def predict(newsDocLst):
 
 if __name__ == '__main__':
     end_date = date.today() + timedelta(days=1)
-    start_date = date.today() - timedelta(days=18)
+    start_date = date.today() - timedelta(days=3)
     #select news(id, title, json_text, time) from mysql
     newsDocLst = getSpanNews(start_date=start_date,
                              end_date=end_date)
