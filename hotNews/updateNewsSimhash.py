@@ -30,20 +30,11 @@ N_TOPIC = 80
 VALID_POS_LST = [NOUN, ADJ, NAMES]
 en_nlp = spacy.load('en')
 
-SIMHASH_LENGTH = 64
+SIMHASH_LENGTH = 128
 
 def stripTag(htmlStr):
     reg = re.compile(r'<[^>]+>', re.S)
     return reg.sub('', htmlStr)
-
-def stemDoc(newsDoc):
-    stemmedDocLst = []
-    for token in newsDoc:
-        if token.pos not in VALID_POS_LST:
-            continue
-        stemmedDocLst.append(token.lemma_)
-    stemmedDocStr = ' '.join(stemmedDocLst)
-    return stemmedDocStr
 
 def getSpanNews(start_date=None, end_date=None):
     env = settings.CURRENT_ENVIRONMENT_TAG
@@ -120,18 +111,25 @@ where
             print 'update %s news: %s, %s...' % (idx, newsId, related_sign) 
         cursor.execute(sqlCmd % (related_sign, newsId))
 
+def stemDoc(newsDoc):
+    stemmedDocLst = []
+    for token in newsDoc:
+        if token.pos not in VALID_POS_LST:
+            continue
+        stemmedDocLst.append(token.lemma_)
+    stemmedDocStr = ' '.join(stemmedDocLst)
+    return stemmedDocStr
+
 def predict(newsDocLst):
     print 'calculating simhash value of %s news...' % len(newsDocLst)
-    stemmedDocLst = []
     simhashLst = []
     (idLst, docLst, publishTimeLst) = zip(*newsDocLst)
     for idx, curDoc in enumerate(en_nlp.pipe(docLst,
             batch_size=50, n_threads=4)):
         if idx % 100 == 0:
             print 'preprocessing %s...' % idx
+        #calculate simhash value
         stemmedDocStr = stemDoc(curDoc)
-        stemmedDocLst.append(stemmedDocStr)
-        #calculate simhash similarity
         hashValue = simhash(stemmedDocStr.lower().split()).hash
         #decimal to binary
         hashValue = bin(hashValue)[2:]
@@ -142,7 +140,7 @@ def predict(newsDocLst):
 
 if __name__ == '__main__':
     end_date = date.today() + timedelta(days=1)
-    start_date = date.today() - timedelta(days=3)
+    start_date = date.today() - timedelta(days=15)
     #select news(id, title, json_text, time) from mysql
     newsDocLst = getSpanNews(start_date=start_date,
                              end_date=end_date)

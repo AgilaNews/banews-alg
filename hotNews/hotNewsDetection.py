@@ -20,7 +20,9 @@ ATTRIBUTE_DIM = 9
         PUBLISH_TIME, FETCH_TIME, CONTENT, TYPE) = \
         range(ATTRIBUTE_DIM)
 
-MINTHRE_HAMMING_DISTANCE = 7
+MINTHRE_HAMMING_DISTANCE = 6
+
+log_file = open('hotnews.log','w')
 
 def getSpanNews(start_date=None, end_date=None):
     env = settings.CURRENT_ENVIRONMENT_TAG
@@ -73,6 +75,9 @@ where
     return newsLst
 
 def countHammingDis(hash1, hash2):
+    if not hash1 or not hash2:
+        #print 'simhash value don\'t exists!'
+        return -1
     if len(hash1)!= len(hash2):
         #print "not allow different length"
         return -1
@@ -84,8 +89,8 @@ def countHammingDis(hash1, hash2):
     return dis
 
 def findHotNews(newsLst):
-    simDct = {}
     newsCount = len(newsLst)
+    clusterLst = range(newsCount)
     for i in range(newsCount):
         for j in range(i+1, newsCount):
             news1 = newsLst[i]
@@ -93,26 +98,47 @@ def findHotNews(newsLst):
             dis = countHammingDis(news1[3], news2[3])
             if dis == -1:
                 continue
-            #print 'get hamming distance...', dis
-            if dis<=MINTHRE_HAMMING_DISTANCE and \
-                    news1[2]!=news2[2]:
-                if simDct.has_key(news1[0]):
-                    simDct[news1[0]].append((j,news2[0]))
-                elif simDct.has_key(news2[0]):
-                    simDct[news2[0]].append((i,news1[0]))
-                else:
-                    simDct[news1[0]] = [(j,news2[0])]
-    return simDct
+            if len(news1[5])<=100 or len(news2[5])<=100:
+                continue
+            #duplicated and different source
+            if dis<=MINTHRE_HAMMING_DISTANCE and news1[2]!=news2[2]:
+                #merge two cluster
+                cluster1 = clusterLst[i]
+                cluster2 = clusterLst[j]
+                clusterLst = merge(clusterLst, cluster1, cluster2)
+    return clusterLst
 
+def merge(clusterLst, cls1, cls2):
+    minCls = min(cls1, cls2)
+    newLst = []
+    for item in clusterLst:
+        if item==cls1 or item==cls2:
+            newLst.append(minCls)
+        else:
+            newLst.append(item)
+    return newLst
 
-def printDct(newsDct, newsLst):
-    for news in newsDct:
-        if len(newsDct[news])>10:
-            print '*'*40
-            print news, newsDct[news]
-            for idx, newsId in newsDct[news]:
-                print '&&&',
-                print newsId+','+newsLst[idx][4]+','+newsLst[idx][5][:50]
+def checkCluster(clusterLst, newsLst):
+    simDct = {}
+    hotNews = []
+    for idx, cluster in enumerate(clusterLst):
+        if simDct.has_key(cluster):
+            simDct[cluster].append((idx,newsLst[idx][0]))
+        else:
+            simDct[cluster] = [(idx, newsLst[idx][0])]
+    for key in simDct:
+        if len(simDct[key])>3:
+            print simDct[key]
+            print >>log_file, '*' * 40
+            channelDct = {}
+            for idx, newsId in simDct[key]:
+                if not channelDct.has_key(newsLst[idx][2]):
+                    channelDct[newsLst[idx][2]] = True
+            if len(channelDct)>3:
+                hotNews.append(simDct[key])
+                for idx, newsId in simDct[key]:
+                    print >>log_file, json.dumps(newsLst[idx], indent=1)
+    return hotNews
 
 if __name__ == '__main__':
     end_date = date.today() + timedelta(days=1)
@@ -120,5 +146,7 @@ if __name__ == '__main__':
     newsLst = getSpanNews(start_date=start_date,
                              end_date=end_date)
 
-    hotNews = findHotNews(newsLst)
-    printDct(hotNews, newsLst)
+    clusterLst = findHotNews(newsLst)
+    hotNews = checkCluster(clusterLst, newsLst)
+
+    print hotNews
