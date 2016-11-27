@@ -161,7 +161,7 @@ if __name__ == '__main__':
     topTopicDct = {}
     for newsId, topicArr in newsTopicLst:
         topTopicDct[newsId] = getTopTopics(topicArr)
-    sc = SparkContext(appName='calcNewsPop/limeng@agilanews.com')
+    sc = SparkContext(appName='userTopicDis/limeng@agilanews.com')
     dTopTopicDct = sc.broadcast(topTopicDct)
     end_date = date.today() + timedelta(days=1)
     start_date = end_date - timedelta(days=2)

@@ -24,9 +24,8 @@ if sys.getdefaultencoding() != default_encoding:
     sys.setdefaultencoding(default_encoding)
 KDIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = '/data/mysqlBackup/banews'
-PREPROCESS_DATA_DIR = '/data/userTopicDis'
+PREPROCESS_DATA_DIR = '/data/models/lda'
 NEWS_TOPIC_QUEUE_PREFIX = 'ALG_TOPIC_NEWS_QUEUE_%i'
-MODEL_DIR = os.path.join(PREPROCESS_DATA_DIR, 'model')
 ATTRIBUTE_DIM = 9
 (NEWS_ID, SRC_URL, CHANNEL_ID, TITLE, SRC_NAME, \
         PUBLISH_TIME, FETCH_TIME, CONTENT, TYPE) = \
@@ -132,19 +131,19 @@ def trainLDA(dateObj, start_date, end_date, withPreprocess=False):
 
 def dump(vectorizer, ldaModel, newsTopicArr, preNewsIdLst,
         topWords=100):
-    with open(os.path.join(MODEL_DIR, 'vectorizer.m'),
+    with open(os.path.join(PREPROCESS_DATA_DIR, 'vectorizer.m'),
             'wb') as fp:
         pickle.dump(vectorizer, fp)
-    with open(os.path.join(MODEL_DIR, 'ldaModel.m'),
+    with open(os.path.join(PREPROCESS_DATA_DIR, 'ldaModel.m'),
             'wb') as fp:
         pickle.dump(ldaModel, fp)
-    with open(os.path.join(MODEL_DIR, 'newsTopic.d'),
+    with open(os.path.join(PREPROCESS_DATA_DIR, 'newsTopic.d'),
             'w') as fp:
         for idx, topicArr in enumerate(newsTopicArr):
             newsId = preNewsIdLst[idx]
             print >>fp, '%s\t%s' % (newsId,
                     ','.join(map(str, topicArr)))
-    with open(os.path.join(MODEL_DIR, 'topicWord.d'),
+    with open(os.path.join(PREPROCESS_DATA_DIR, 'topicWord.d'),
             'w') as fp:
         featureNameLst = vectorizer.get_feature_names()
         for topicIdx, topicDis in enumerate(ldaModel.components_):
@@ -242,7 +241,7 @@ where
 
 def loadPredictTopics():
     newsIdSet = set()
-    with open(os.path.join(MODEL_DIR, 'newsTopic.d'), 'r') as fp:
+    with open(os.path.join(PREPROCESS_DATA_DIR, 'newsTopic.d'), 'r') as fp:
         for line in fp:
             vals = line.strip().split('\t', 1)
             if len(vals) == 2:
@@ -251,9 +250,9 @@ def loadPredictTopics():
 
 def predict(newsDocLst):
     print 'predict %s news...' % len(newsDocLst)
-    with open(os.path.join(MODEL_DIR, 'ldaModel.m'), 'rb') as fp:
+    with open(os.path.join(PREPROCESS_DATA_DIR, 'ldaModel.m'), 'rb') as fp:
         ldaModel = pickle.load(fp)
-    with open(os.path.join(MODEL_DIR, 'vectorizer.m'), 'rb') as fp:
+    with open(os.path.join(PREPROCESS_DATA_DIR, 'vectorizer.m'), 'rb') as fp:
         vectorizer = pickle.load(fp)
     stemmedDocLst = []
     (idLst, docLst, publishTimeLst) = zip(*newsDocLst)
@@ -306,7 +305,7 @@ if __name__ == '__main__':
                     print 'offline dealing %s...' % idx
                 filterNewsDocLst.append((newsId, textStr, publishTime))
             docTopicLst = predict(filterNewsDocLst)
-            with open(os.path.join(MODEL_DIR, 'newsTopic.d'), 'a+') as fp:
+            with open(os.path.join(PREPROCESS_DATA_DIR, 'newsTopic.d'), 'a+') as fp:
                 for newsId, topicArr in docTopicLst:
                     print >>fp, '%s\t%s' % (newsId,
                             ','.join(map(str, topicArr)))
@@ -329,7 +328,7 @@ if __name__ == '__main__':
                         queueKey = NEWS_TOPIC_QUEUE_PREFIX % topicIdx
                         redisCli.zadd(queueKey, newsId, publishTime)
     elif options.action == 'debug':
-        newsIdLst = ['LpmLmBcp2AU=', 'ire8mCYroUI=', 'GWQE4EclOgg=']
+        newsIdLst = ['LpmLmBcp2AU=', 'ire8mCYroUI=', 'GWQE4EclOgg=', 'n9CLIusvXL8=']
         newsDocLst = getSpecificNews(newsIdLst)
         docTopicLst = predict(newsDocLst)
         for idx, (newsId, topicArr) in enumerate(docTopicLst):
