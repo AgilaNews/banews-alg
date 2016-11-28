@@ -11,6 +11,7 @@ MODEL_FILE=$DATA_DIR/'liblinear.model'
 today=`date +%Y%m%d`
 end_date=`date -d '1 days' +%Y%m%d`
 start_date=`date -d '-14 days' +%Y%m%d`
+debug=false
 
 if [ $1 = "sample" ]; then
     # positive sample ratio: 6000000 / 32717667. = 0.183
@@ -52,4 +53,13 @@ fi
 if [ $1 = "train" ]; then
     cost=1.0
     $LIBLINEAR_EXE $svm_params -c $cost $SCALE_FILE $MODEL_FILE
+    if [ "$debug" = true ]; then
+        sandbox="10.8.6.7"
+        scp -r /data/models/liblinear root@$sandbox:/data/models/
+        ssh root@$sandbox "chown -R work:work /data/models/liblinear"
+    else
+        comment="10.8.91.237"
+        scp -r /data/models/liblinear root@$comment:/data/models/
+        ssh root@$comment "chown -R work:work /data/models/liblinear"
+    fi
 fi
