@@ -87,7 +87,7 @@ FROM
   `tb_news`
 WHERE
   (
-    `channel_id` NOT IN (10011, 10012)
+    `channel_id` NOT IN (10011, 10012, 30001)
   ) AND (`is_visible` = 1);
 '''
     cursor.execute(sqlCmd)
