@@ -12,7 +12,7 @@ AVAILABLE_STRATEGY_LST = ['10001_popularRanking',
                           '10001_lrRanker']
 AVAILABLE_CHANNEL_LST = ['10001', ]
 LIST_REQUEST_CODE = '020104'
-LIST_ARTICLE_REQUEST_CODE = '020103'
+LIST_ARTICLE_REQUEST_CODE = '020102'
 AVAILABLE_EVENTID_LST = [LIST_REQUEST_CODE, LIST_ARTICLE_REQUEST_CODE]
 SERVER_FRESH_CODE = '040101'
 CLIENT_FRESH_CODE = '040102'
@@ -50,50 +50,48 @@ def calcCliDisRatio(sc, start_date, end_date):
     fileLst = getSpanFileLst(start_date, end_date)
     originalRdd = sc.textFile(','.join(fileLst)).map(
             lambda dctStr: json.loads(dctStr)
-        ).filter(
-            lambda attrDct: attrDct.get('client-version') != '1.2.5'
         ).map(
             lambda attrDct: (attrDct.get('event-id'),
                              attrDct.get('did'),
                              attrDct.get('news_id'),
                              attrDct.get('news'),
-                             attrDct.get('session'),
+                             attrDct.get('dispatch_id'),
                              attrDct.get('policy'),
                              attrDct.get('channel_id'),
                              getTransferTime(attrDct.get('time')))
         ).filter(
-            lambda (eventId, deviceId, newsId, newsIdLst, sessionId,
+            lambda (eventId, deviceId, newsId, newsIdLst, dispatchId,
                 strategy, channelId, timestamp): \
                 (eventId in AVAILABLE_EVENTID_LST) and \
                 (timestamp >= start_date) and \
                 (timestamp < end_date) and \
-                sessionId
+                dispatchId
         ).cache()
 
     clickRdd = originalRdd.filter(
-            lambda (eventId, deviceId, newsId, newsIdLst, sessionId,
+            lambda (eventId, deviceId, newsId, newsIdLst, dispatchId,
                 strategy, channelId, timestamp): \
                 (eventId == LIST_ARTICLE_REQUEST_CODE) and newsId
         ).map(
-            lambda (eventId, deviceId, newsId, newsIdLst, sessionId,
+            lambda (eventId, deviceId, newsId, newsIdLst, dispatchId,
                 strategy, channelId, timestamp): \
-                ((timestamp, sessionId, newsId, deviceId), 1)
+                ((timestamp, dispatchId, newsId, deviceId), 1)
         ).distinct()
     listRdd = originalRdd.filter(
-            lambda (eventId, deviceId, newsId, newsIdLst, sessionId,
+            lambda (eventId, deviceId, newsId, newsIdLst, dispatchId,
                 strategy, channelId, timestamp): \
                 (eventId == LIST_REQUEST_CODE) and \
                 (channelId in AVAILABLE_CHANNEL_LST) and \
                 newsIdLst
         ).flatMap(
-            lambda (eventId, deviceId, newsId, newsIdLst, sessionId,
+            lambda (eventId, deviceId, newsId, newsIdLst, dispatchId,
                 strategy, channelId, timestamp): \
-                [((timestamp, sessionId, curNewsId, deviceId), strategy) \
+                [((timestamp, dispatchId, curNewsId, deviceId), strategy) \
                 for curNewsId in newsIdLst]
         ).distinct()
 
     combineRdd = listRdd.leftOuterJoin(clickRdd, 128).map(
-            lambda ((curDate, sessionId, newsId, deviceId),
+            lambda ((curDate, dispatchId, newsId, deviceId),
                 (strategy, flag)): ((curDate, strategy),
                 (set([deviceId, ]), 1, 1 if flag else 0))
         ).reduceByKey(
