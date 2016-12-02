@@ -12,7 +12,7 @@ HISTORY_LOG_DIR = '/banews/useraction'
 HADOOP_BIN = '/home/work/hadoop-2.6.0-cdh5.7.0/bin/hadoop'
 LOG_DIR = '/banews/useraction'
 URL_TMP = "http://share.agilanews.today/news?id=%s"
-sc = SparkContext(appName='channelStat/lantian')
+sc = SparkContext(appName='hotvideo/lantian')
 
 VIDEO_DISPATCH_ACTION = set(['020104'])
 VIDEO_PLAY_ACTION = set(['020301','020102'])
