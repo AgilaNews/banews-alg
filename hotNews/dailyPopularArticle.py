@@ -18,10 +18,10 @@ VALID_EVENTID_LST = [ARTICLE_LIKE,
                      LIST_ARTICLE_CLICK,
                      ARTICLE_COMMENT]
 NOW = datetime.now()
-CURRENT_AVAILABLE_CNT = 100
+CURRENT_AVAILABLE_CNT = 200
 CHANNEL_THRESHOLD_DCT = {
         # channelId, (cntThr, dayThr)
-        10001: (10, 1),   # hot
+        10001: (10, 1.5),   # hot
         10002: (2, 2),    # world
         10003: (2, 1),    # sports
         10004: (2, 1),    # entertainment
@@ -87,7 +87,7 @@ FROM
   `tb_news`
 WHERE
   (
-    `channel_id` NOT IN (10011, 10012)
+    `channel_id` NOT IN (10011, 10012, 30001)
   ) AND (`is_visible` = 1);
 '''
     cursor.execute(sqlCmd)
