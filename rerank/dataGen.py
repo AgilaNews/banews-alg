@@ -1,5 +1,6 @@
 # -*- coding:utf-8 -*-
 
+import sys
 import os
 import re
 from datetime import date, datetime, timedelta
@@ -30,9 +31,12 @@ HOUR = 60 * 60
 POSITIVE_TAG = 1
 NEGATIVE_TAG = -1
 FEATURE_MAP_NAME = 'feature_mapping.listPage'
-#DATA_DIR = '/data/models/liblinear'
-ALG_NEWS_FEATURE_KEY = 'ALG_NEWS_FEATURE_KEY'
+ALG_NEWS_FEATURE_KEY = 'ALG_NEWS_FEATURE_KEY_V2'
 MIN_FEATURE_VALUE = 0.001
+TOPIC_CNT = 80
+TOPIC_PREFIX_KEY = 'TOPIC_%s'
+TRAINING_DATA_HDFS = '/user/limeng/models/liblinear/trainingData'
+TMP_DATA_PATH = '/data/tmp/alg'
 
 def getSpanFileLst(start_date, end_date, withToday=False):
     fileLst = []
@@ -166,6 +170,27 @@ def getCursor():
     cursor = conn.cursor()
     return cursor
 
+def getNewsTopicFeatures(newsFeatureDct):
+    filterNewsFeatureDct = {}
+    with open('/data/models/lda/newsTopic.d', 'r') as fp:
+        idx = 0
+        for line in fp:
+            if idx % 100 == 0:
+                print 'load %s news topic features...'  % idx
+            idx += 1
+            vals = line.strip().split()
+            if len(vals) != 2:
+                continue
+            newsId = vals[0]
+            if newsId not in newsFeatureDct:
+                continue
+            featureLst = list(newsFeatureDct[newsId])
+            topicLst = \
+                    [float(curVal) for curVal in vals[1].split(',')]
+            featureLst.append(topicLst)
+            filterNewsFeatureDct[newsId] = featureLst
+    return filterNewsFeatureDct
+
 def getNewsMetaFeatures(start_date=None, end_date=None):
     cursor = getCursor()
     sqlCmd = '''
@@ -207,29 +232,31 @@ where
         fetTime = datetime.fromtimestamp(fetTime)
         newsFeatureDct[newsId] = (titleLen, imageCnt, videoCnt,
                 contentLen, pubTime, fetTime)
+    # append news topic distribution
+    newsFeatureDct = getNewsTopicFeatures(newsFeatureDct)
     return newsFeatureDct
 
-def combineFeatures(logRdd, bMetaFeatureDct, isDaily=False):
+def combineFeatures(logRdd, metaFeatureRdd, isDaily=False):
     # news action features
     actFeatureRdd = getNewsActionFeatures(logRdd)
-    def _(newsId, actFeatureLst, bMetaFeatureDct):
+    def _(actFeatureLst, metaFeatureLst):
         (displayCnt, clickCnt, likeCnt, commentCnt,
                 clickRat, likeRat, commentRat) = actFeatureLst
-        if newsId not in bMetaFeatureDct.value:
-            return (newsId, None)
-        (titleLen, imageCnt, videoCnt, contentLen,
-                pubTime, fetTime) = bMetaFeatureDct.value[newsId]
+        (titleLen, imageCnt, videoCnt, contentLen, pubTime,
+                fetTime, topicLst) = metaFeatureLst
         if isDaily:
             pubTime = int(pubTime.strftime('%s'))
             fetTime = int(fetTime.strftime('%s'))
         featureLst = [displayCnt, clickCnt, likeCnt,
                 commentCnt, clickRat, likeRat, commentRat,
                 titleLen, imageCnt, videoCnt, contentLen,
-                pubTime, fetTime]
-        return (newsId, featureLst)
-    featureRdd = actFeatureRdd.map(
-                lambda (newsId, actFeatureLst): \
-                        _(newsId, actFeatureLst, bMetaFeatureDct)
+                pubTime, fetTime, topicLst]
+        return featureLst
+    featureRdd = actFeatureRdd.join(
+                metaFeatureRdd, 128
+            ).mapValues(
+                lambda (actFeatureLst, metaFeatureLst): \
+                        _(actFeatureLst, metaFeatureLst)
             ).filter(
                 lambda (newsId, featureLst): featureLst
             )
@@ -249,7 +276,7 @@ def getMaxLabelLog(logRdd):
                 lambda (eventId, did, newsId, timestamp): \
                         ((did, newsId), (eventId, timestamp))
             ).reduceByKey(
-                lambda preTup, latTup: _actMerge(preTup, latTup)
+                lambda preTup, latTup: _actMerge(preTup, latTup), 256
             ).mapValues(
                 lambda (eventId, timestamp): (ARTICLE_DISPLAY_EVENTID \
                         if str(eventId)==ARTICLE_DISPLAY_EVENTID else \
@@ -257,8 +284,8 @@ def getMaxLabelLog(logRdd):
             )
     return logRdd
 
-def loagFeatureMap(featureFile):
-    if not hasattr(loagFeatureMap, 'featureNameLst'):
+def loadFeatureMap(featureFile):
+    if not hasattr(loadFeatureMap, 'featureNameLst'):
         featureNameLst = []
         if not os.path.isfile(featureFile):
             print 'AG feature file not exist!'
@@ -266,45 +293,77 @@ def loagFeatureMap(featureFile):
         with open(featureFile, 'r') as fp:
             for line in fp:
                 featureNameLst.append(line.strip())
-        loagFeatureMap.featureNameLst = featureNameLst
-    return loagFeatureMap.featureNameLst
+        loadFeatureMap.featureNameLst = featureNameLst
+    return loadFeatureMap.featureNameLst
+
+def setMetaFeature(featureDct, metaFeatureLst, timestamp):
+    (imageCnt, videoCnt, titleLen, contentLen, pubTime,
+            fetTime) = metaFeatureLst
+    fetTimeInterval = (timestamp - fetTime).total_seconds()
+    fetTimeInterval /= HOUR
+    if fetTimeInterval <= 0:
+        fetTimeInterval = MIN_FEATURE_VALUE
+    pubTimeInterval = (timestamp - pubTime).total_seconds()
+    pubTimeInterval /= HOUR
+    if pubTimeInterval <= 0:
+        pubTimeInterval = MIN_FEATURE_VALUE
+    featureDct['PICTURE_COUNT'] = imageCnt
+    featureDct['VIDEO_COUNT'] = videoCnt
+    featureDct['TITLE_LENGTH'] = titleLen
+    featureDct['CONTENT_LENGTH'] = contentLen
+    featureDct['FETCH_TIMESTAMP_INTERVAL'] = fetTimeInterval
+    featureDct['POST_TIMESTAMP_INTERTVAL'] = pubTimeInterval
+    return featureDct
+
+def setActionFeature(featureDct, actFeatureLst):
+    (displayCnt, clickCnt, likeCnt, commentCnt,
+            clickRat, likeRat, commentRat) = actFeatureLst
+    featureDct['HISTORY_DISPLAY_COUNT'] = displayCnt
+    featureDct['HISTORY_READ_COUNT'] = clickCnt
+    featureDct['HISTORY_LIKE_COUNT'] = likeCnt
+    featureDct['HISTORY_COMMENT_COUNT'] = commentCnt
+    featureDct['HISTORY_READ_DISPLAY_RATIO'] = clickRat
+    featureDct['HISTORY_LIKE_DISPLAY_RATIO'] = likeRat
+    featureDct['HISTORY_COMMENT_DISPLAY_RATIO'] = commentRat
+    return featureDct
+
+def setTopicFeature(featureDct, topicLst):
+    if len(topicLst) != TOPIC_CNT:
+        print 'Topic length incorrect, Error!'
+        exit(1)
+    for idx, topicVal in enumerate(topicLst):
+        key = TOPIC_PREFIX_KEY % idx
+        featureDct[key] = topicVal
+    return featureDct
 
 def getSampleLog(maxLabelLogRdd, featureRdd):
     featureMapPath = os.path.join(KDIR, FEATURE_MAP_NAME)
-    featureNameLst = loagFeatureMap(featureMapPath)
+    featureNameLst = loadFeatureMap(featureMapPath)
     def _(did, eventId, timestamp, featureLst):
         (displayCnt, clickCnt, likeCnt, commentCnt,
                 clickRat, likeRat, commentRat, titleLen,
                 imageCnt, videoCnt, contentLen, pubTime,
-                fetTime) = featureLst
-        fetTimeInterval = (timestamp - fetTime).total_seconds()
-        fetTimeInterval /= HOUR
-        if fetTimeInterval <= 0:
-            fetTimeInterval = MIN_FEATURE_VALUE
-        pubTimeInterval = (timestamp - pubTime).total_seconds()
-        pubTimeInterval /= HOUR
-        if pubTimeInterval <= 0:
-            pubTimeInterval = MIN_FEATURE_VALUE
-        featureDct = {'HISTORY_DISPLAY_COUNT': displayCnt,
-                      'HISTORY_READ_COUNT': clickCnt,
-                      'HISTORY_LIKE_COUNT': likeCnt,
-                      'HISTORY_COMMENT_COUNT': commentCnt,
-                      'HISTORY_READ_DISPLAY_RATIO': clickRat,
-                      'HISTORY_LIKE_DISPLAY_RATIO': likeRat,
-                      'HISTORY_COMMENT_DISPLAY_RATIO': commentRat,
-                      'PICTURE_COUNT': imageCnt,
-                      'VIDEO_COUNT': videoCnt,
-                      'TITLE_LENGTH': titleLen,
-                      'CONTENT_LENGTH': contentLen,
-                      'FETCH_TIMESTAMP_INTERVAL': fetTimeInterval,
-                      'POST_TIMESTAMP_INTERTVAL': pubTimeInterval}
+                fetTime, topicLst) = featureLst
+        featureDct = {}
+        # extract news meta features
+        metaFeatureLst = [imageCnt, videoCnt, titleLen, contentLen,
+                pubTime, fetTime]
+        setMetaFeature(featureDct, metaFeatureLst, timestamp)
+        # extract news action features
+        actFeatureLst = [displayCnt, clickCnt, likeCnt, commentCnt,
+                clickRat, likeRat, commentRat]
+        setActionFeature(featureDct, actFeatureLst)
+        # extract news topic features
+        setTopicFeature(featureDct, topicLst)
         if eventId == ARTICLE_DISPLAY_EVENTID:
             label = NEGATIVE_TAG
         else:
             label = POSITIVE_TAG
+        # label samples
         valueLst = [str(label), ]
         for idx, curFeatureName in enumerate(featureNameLst):
-            value = featureDct.get(curFeatureName, 0)
+            value = round(featureDct.get(curFeatureName, 0),
+                    ROUND_CNT)
             if value:
                 valueLst.append('%s:%s' % (idx+1, value))
         return valueLst
@@ -329,17 +388,30 @@ def sample(sampleRdd, posRatio, negRatio):
                 return valsLst
             else:
                 return None
+    os.popen('%s fs -rm -r %s' % (HADOOP_BIN, TRAINING_DATA_HDFS))
     sampleRdd = sampleRdd.map(
                 lambda valsLst: _(valsLst)
             ).filter(
                 lambda valsLst: valsLst
             ).map(
                 lambda valsLst: ' '.join(valsLst)
-            )
-    sampleLst = sampleRdd.collect()
-    with open(SAMPLE_FILENAME, 'w') as fp:
-        for line in sampleLst:
-            print >>fp, line
+            ).saveAsTextFile(TRAINING_DATA_HDFS)
+    baseName = os.path.basename(TRAINING_DATA_HDFS)
+    os.popen('rm -rf %s' % os.path.join(TMP_DATA_PATH, baseName))
+    os.popen('%s fs -get %s %s' % (HADOOP_BIN, TRAINING_DATA_HDFS,
+        TMP_DATA_PATH))
+    os.popen('cat %s/* > %s' % (os.path.join(TMP_DATA_PATH, baseName),
+        SAMPLE_FILENAME))
+
+def featureExp(featureLst):
+    resLst = []
+    for feature in featureLst:
+        if type(feature) not in (list, tuple):
+            resLst.append(feature)
+        else:
+            resLst.extend(list(feature))
+    resLst = map(lambda val: round(val, ROUND_CNT), resLst)
+    return resLst
 
 if __name__ == '__main__':
     sc = SparkContext(appName='rerank/limeng@agilanews.com',
@@ -378,11 +450,11 @@ if __name__ == '__main__':
         print '=' * 60
     elif options.action == 'sample':
         # news meta features
-        news_start_date = start_date - timedelta(days=10)
+        news_start_date = start_date - timedelta(days=6)
         metaFeatureDct = getNewsMetaFeatures(
                 start_date=news_start_date, end_date=end_date)
-        bMetaFeatureDct = sc.broadcast(metaFeatureDct)
-        featureRdd = combineFeatures(logRdd, bMetaFeatureDct)
+        metaFeatureRdd = sc.parallelize(metaFeatureDct.items())
+        featureRdd = combineFeatures(logRdd, metaFeatureRdd)
         maxLabelLogRdd = maxLabelLogRdd.map(
                 lambda ((did, newsId), (eventId, timestamp)): \
                         (newsId, (did, eventId, timestamp))
@@ -396,9 +468,12 @@ if __name__ == '__main__':
         start_date = end_date - timedelta(days=5)
         metaFeatureDct = getNewsMetaFeatures(
                 start_date=start_date, end_date=end_date)
-        bMetaFeatureDct = sc.broadcast(metaFeatureDct)
-        featureRdd = combineFeatures(logRdd, bMetaFeatureDct,
-                isDaily=True)
+        metaFeatureRdd = sc.parallelize(metaFeatureDct.items())
+        featureRdd = combineFeatures(
+                    logRdd, metaFeatureRdd, isDaily=True
+                ).mapValues(
+                    lambda featureLst: featureExp(featureLst)
+                )
         newsFeatureLst = featureRdd.collect()
         env = settings.CURRENT_ENVIRONMENT_TAG
         envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
