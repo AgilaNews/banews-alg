@@ -11,7 +11,7 @@ MODEL_FILE=$DATA_DIR/'liblinear.model'
 today=`date +%Y%m%d`
 end_date=`date -d '1 days' +%Y%m%d`
 start_date=`date -d '-8 days' +%Y%m%d`
-debug=true
+debug=false
 PYTHON=/usr/bin/python2.7
 
 if [ $1 = "sample" ]; then
