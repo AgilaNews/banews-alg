@@ -94,7 +94,7 @@ def calcNewsScore(sc, start_date, end_date, dTopTopicDct):
                              getTransferTime(float(attrDct.get('time'))/1000))
         ).filter(
             lambda (eventId, did, newsId, timestamp): \
-                    (eventId in VALID_EVENTID_LST) \
+                    timestamp and (eventId in VALID_EVENTID_LST) \
                     and (((NOW - timestamp).total_seconds() / (60 * 60.)) <= 24)
         ).cache()
     # score foreach news

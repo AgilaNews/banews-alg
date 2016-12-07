@@ -63,6 +63,7 @@ def calcCliDisRatio(sc, start_date, end_date):
             lambda (eventId, deviceId, newsId, newsIdLst, dispatchId,
                 strategy, channelId, timestamp): \
                 (eventId in AVAILABLE_EVENTID_LST) and \
+                timestamp \
                 (timestamp >= start_date) and \
                 (timestamp < end_date) and \
                 dispatchId
