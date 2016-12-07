@@ -27,7 +27,10 @@ def line_tran(line):
 
 def action_filter(line, start, end):
     tm = datetime.fromtimestamp(int(line.get("time", 0))/1000).date()
-    tm = getTransferTime(line.get("time")).date()
+    tm = getTransferTime(line.get("time"))
+    if not tm:
+        return False
+    tm = tm.date()
     did = line.get("did", None)
     if not did:
         return False
