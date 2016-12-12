@@ -5,6 +5,7 @@ sys.path.insert(0, '/home/work/spider/newsCrawler/newsCrawler')
 from datetime import datetime
 from ConfigParser import ConfigParser
 from random import sample
+from redis import Redis
 from math import pow
 from urlparse import urlparse
 from httplib import HTTPConnection
@@ -26,14 +27,16 @@ handler.setFormatter(formatter)
 logger = logging.getLogger('humanRec')
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
-SCREEN_LOG_MSG = 'Tracking {media} Spider:{spiderName}, ScreenName:{screenName}'
-STATUS_LOG_MSG = 'Posting Media:{media}, StatusId:{statusId}, ' \
+SCREEN_LOG_MSG = '[Tracking] Media:{media} Spider:{spiderName}, ' \
+        'ScreenName:{screenName}'
+STATUS_LOG_MSG = '[Posting] Media:{media}, StatusId:{statusId}, ' \
         'Favor:{favorCnt}, Tweeted:{tweetCnt}, OriginalUrl:{orgUrl}, ' \
-        'Url:{cleUrl}'
-STATUS_LOG_ERR = 'Posting Media:{media}, StatusId:{statusId}, ' \
+        'Url:{cleUrl}, UrlSign:{urlSign}'
+STATUS_LOG_ERR = '[Posting] Media:{media}, StatusId:{statusId}, ' \
         'Url:{orgUrl}, Depth:{depth}, Error:{error}'
-CRAWL_LOG_MSG = 'Crawling Project:{project}, Spider:{spiderName}, ' \
+CRAWL_LOG_MSG = '[Crawling] Project:{project}, Spider:{spiderName}, ' \
         'JobId:{jobId}, NewsCnt:{newsCnt}, NewsSigns:{newsSigns}'
+REDIS_LOG_MSG = '[Redising] NewsCnt:{newsCnt}, NewsSigns:{newsSigns}'
 
 kDIR = os.path.dirname(os.path.abspath(__file__))
 (TWITTER, FACEBOOK) = ('Twitter', 'Facebook')
@@ -41,6 +44,7 @@ TWITTER_ACCOUNT_KEY = 'SPIDER_TWITTER'
 FACEBOOK_ACCOUNT_KEY = 'SPIDER_FACEBOOK'
 MAX_DEPTH = 5
 NOW = datetime.now()
+ALG_EDITOR_REC_KEY = 'ALG_EDITOR_REC_KEY'
 
 def getScrapydClient():
     scrapydUrl = settings.SCRAPYD_URL
@@ -48,6 +52,7 @@ def getScrapydClient():
     return scrapydCli
 
 def getApi(parser, media=TWITTER):
+    parser.optionxform = str
     parser.read(os.path.join(kDIR, 'token.cfg'))
     sectionLst = [section for section in parser.sections() \
             if section.startswith(media)]
@@ -119,7 +124,7 @@ def calculateSco(favoriteCnt, retweetCnt, createdTime):
     score *= pow(0.5, span)
     return score
 
-def getUserTweets(media, api, spiderName, screenName, count=5):
+def getUserTweets(media, api, spiderName, screenName, count=50):
     statusLst = api.GetUserTimeline(screen_name=screenName,
                                     exclude_replies=False,
                                     count=count)
@@ -136,6 +141,10 @@ def getUserTweets(media, api, spiderName, screenName, count=5):
                 if not resLst:
                     continue
                 (orgUrl, cleUrl) = resLst
+                if cleUrl:
+                    urlSign = create_sign(cleUrl)
+                else:
+                    urlSign = None
                 favoriteCnt = statusObj.favorite_count
                 retweetCnt = statusObj.retweet_count
                 createdTime = statusObj.created_at
@@ -148,17 +157,17 @@ def getUserTweets(media, api, spiderName, screenName, count=5):
                     favorCnt=favoriteCnt,
                     tweetCnt=retweetCnt,
                     orgUrl=orgUrl,
-                    cleUrl=cleUrl))
-                if cleUrl and (cleUrl not in alreadyNewsSet):
-                    alreadyNewsSet.add(cleUrl)
-                    urlSign = create_sign(cleUrl)
+                    cleUrl=cleUrl,
+                    urlSign=urlSign))
+                if urlSign and (urlSign not in alreadyNewsSet):
+                    alreadyNewsSet.add(urlSign)
                     score = calculateSco(favoriteCnt, retweetCnt,
                             createdTime)
                     newsScoLst.append((urlSign, cleUrl, score))
     return newsScoLst
 
 def crawlNews(scrapydCli, project, spider, newsScoLst,
-        bulkSize=20):
+        bulkSize=10):
     bulkCnt = len(newsScoLst) / bulkSize + 1
     for idx in range(bulkCnt):
         startIdx = idx * bulkSize
@@ -177,6 +186,36 @@ def crawlNews(scrapydCli, project, spider, newsScoLst,
             newsCnt=len(curUrlLst),
             newsSigns=urlSigns))
 
+def dumpRedis(newsScoLst):
+    if not newsScoLst:
+        return None
+    env = settings.CURRENT_ENVIRONMENT_TAG
+    envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
+    redisCfg = envCfg.get('news_queue_redis_config', {})
+    if not redisCfg:
+        logger.error('redis configuration not exist!')
+        exit(1)
+    redisCli = Redis(host=redisCfg['host'],
+                     port=redisCfg['port'])
+    if redisCli.exists(ALG_EDITOR_REC_KEY):
+        redisCli.delete(ALG_EDITOR_REC_KEY)
+    totalCnt = 0
+    tmpDct = {}
+    for idx, (newsId, score) in enumerate(newsScoLst):
+        totalCnt += 1
+        if len(tmpDct) >= 10:
+            redisCli.hmset(ALG_EDITOR_REC_KEY, tmpDct)
+            logger.info(REDIS_LOG_MSG.format(
+                newsCnt=len(tmpDct),
+                newsSigns=','.join(tmpDct.keys())))
+            tmpDct = {}
+        tmpDct[newsId] = score
+    if len(tmpDct):
+        logger.info(REDIS_LOG_MSG.format(
+            newsCnt=len(tmpDct),
+            newsSigns=','.join(tmpDct.keys())))
+        redisCli.hmset(ALG_EDITOR_REC_KEY, tmpDct)
+
 def main(media, project=settings.BOT_NAME):
     parser = ConfigParser()
     # track news feed list from twitter & facebook
@@ -193,8 +232,13 @@ def main(media, project=settings.BOT_NAME):
         spiderNewsLst.append((spiderName, newsScoLst))
     # crawl news from according source
     scrapydCli = getScrapydClient()
+    mergeNewsScoLst = []
     for idx, (spiderName, newsScoLst) in enumerate(spiderNewsLst):
         crawlNews(scrapydCli, project, spiderName, newsScoLst)
+        for urlSign, cleUrl, score in newsScoLst:
+            mergeNewsScoLst.append((urlSign, score))
+    # dump news score information to redis
+    dumpRedis(mergeNewsScoLst)
 
 if __name__ == '__main__':
     main(TWITTER)
