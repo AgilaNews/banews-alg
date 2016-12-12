@@ -9,6 +9,7 @@ from redis import Redis
 from math import pow
 from urlparse import urlparse
 from httplib import HTTPConnection
+from unshortenit import unshorten
 import requests
 import logging
 
@@ -33,7 +34,7 @@ STATUS_LOG_MSG = '[Posting] Media:{media}, StatusId:{statusId}, ' \
         'Favor:{favorCnt}, Tweeted:{tweetCnt}, OriginalUrl:{orgUrl}, ' \
         'Url:{cleUrl}, UrlSign:{urlSign}'
 STATUS_LOG_ERR = '[Posting] Media:{media}, StatusId:{statusId}, ' \
-        'Url:{orgUrl}, Depth:{depth}, Error:{error}'
+        'Url:{orgUrl}, code:{code}'
 CRAWL_LOG_MSG = '[Crawling] Project:{project}, Spider:{spiderName}, ' \
         'JobId:{jobId}, NewsCnt:{newsCnt}, NewsSigns:{newsSigns}'
 REDIS_LOG_MSG = '[Redising] NewsCnt:{newsCnt}, NewsSigns:{newsSigns}'
@@ -136,11 +137,15 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
             for urlObj in statusObj.urls:
                 if not urlObj.expanded_url:
                     continue
-                resLst = unshortenUrl(media, statusId,
-                        urlObj.expanded_url, 0)
-                if not resLst:
+                orgUrl = urlObj.expanded_url
+                (cleUrl, code) = unshorten(orgUrl)
+                if code != 200:
+                    logger.error(STATUS_LOG_ERR.format(
+                        media=media,
+                        statusId=statusId,
+                        orgUrl=orgUrl,
+                        code=code))
                     continue
-                (orgUrl, cleUrl) = resLst
                 if cleUrl:
                     urlSign = create_sign(cleUrl)
                 else:
