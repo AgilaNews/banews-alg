@@ -156,9 +156,9 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                     urlSign = None
                 favoriteCnt = statusObj.favorite_count
                 retweetCnt = statusObj.retweet_count
-                createdTime = statusObj.created_at
-                createdTime = dateParser(createdTime, fuzzy=True)
-                createdTime.replace(tzinfo=None)
+                createdTime = dateParser(statusObj.created_at,
+                        fuzzy=True)
+                createdTime = createdTime.replace(tzinfo=None)
                 logger.info(STATUS_LOG_MSG.format(
                     media=media,
                     statusId=statusId,
