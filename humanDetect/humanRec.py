@@ -212,7 +212,7 @@ def dumpRedis(newsScoLst):
     for idx, (newsId, score) in enumerate(newsScoLst):
         totalCnt += 1
         if len(tmpDct) >= 10:
-            redisCli.hmset(ALG_EDITOR_REC_KEY, tmpDct)
+            redisCli.zadd(ALG_EDITOR_REC_KEY, *tmpDct.items())
             logger.info(REDIS_LOG_MSG.format(
                 newsCnt=len(tmpDct),
                 newsSigns=','.join(tmpDct.keys())))
@@ -222,7 +222,7 @@ def dumpRedis(newsScoLst):
         logger.info(REDIS_LOG_MSG.format(
             newsCnt=len(tmpDct),
             newsSigns=','.join(tmpDct.keys())))
-        redisCli.hmset(ALG_EDITOR_REC_KEY, tmpDct)
+        redisCli.zadd(ALG_EDITOR_REC_KEY, *tmpDct.items())
 
 def main(media, project=settings.BOT_NAME):
     parser = ConfigParser()
