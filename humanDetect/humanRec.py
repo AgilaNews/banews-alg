@@ -12,10 +12,12 @@ from httplib import HTTPConnection
 from unshortenit import unshorten
 import requests
 import logging
+from time import sleep
 
 import twitter
 import facebook
 from scrapyd_api import ScrapydAPI
+from elasticsearch import Elasticsearch
 from dateutil.parser import parse as dateParser
 
 import settings
@@ -52,6 +54,26 @@ def getScrapydClient():
     scrapydUrl = settings.SCRAPYD_URL
     scrapydCli = ScrapydAPI(scrapydUrl)
     return scrapydCli
+
+def getEsClient():
+    env = settings.CURRENT_ENVIRONMENT_TAG
+    cfgDct = settings.ENVIRONMENT_CONFIG[env]
+    es_servers = cfgDct['elastic_search_config']['servers']
+    es_servers = es_servers if isinstance(es_servers, list) else [es_servers]
+    es_timeout = cfgDct['elastic_search_config']['timeout']
+    esClient = Elasticsearch(hosts=es_servers, timeout=es_timeout)
+    return esClient
+
+def getRedisClient():
+    env = settings.CURRENT_ENVIRONMENT_TAG
+    envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
+    redisCfg = envCfg.get('news_queue_redis_config', {})
+    if not redisCfg:
+        logger.error('redis configuration not exist!')
+        exit(1)
+    redisCli = Redis(host=redisCfg['host'],
+                     port=redisCfg['port'])
+    return redisCli
 
 def getApi(parser, media=TWITTER):
     parser.optionxform = str
@@ -197,19 +219,27 @@ def crawlNews(scrapydCli, project, spider, newsScoLst,
 def dumpRedis(newsScoLst):
     if not newsScoLst:
         return None
+    esCli = getEsClient()
     env = settings.CURRENT_ENVIRONMENT_TAG
-    envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
-    redisCfg = envCfg.get('news_queue_redis_config', {})
-    if not redisCfg:
-        logger.error('redis configuration not exist!')
-        exit(1)
-    redisCli = Redis(host=redisCfg['host'],
-                     port=redisCfg['port'])
+    cfgDct = settings.ENVIRONMENT_CONFIG[env]
+    indexKey = cfgDct['elastic_search_config']['index']
+    typeKey = cfgDct['elastic_search_config']['type']
+    filterNewsLst = []
+    for newsId, sco in newsScoLst:
+        try:
+            resDct = esCli.get(index=indexKey,
+                            doc_type=typeKey,
+                            id=newsId)
+            if resDct['_source'].get('plain_text'):
+                filterNewsLst.append((newsId, sco))
+        except:
+            continue
+    redisCli = getRedisClient()
     if redisCli.exists(ALG_EDITOR_REC_KEY):
         redisCli.delete(ALG_EDITOR_REC_KEY)
     totalCnt = 0
     tmpDct = {}
-    for idx, (newsId, score) in enumerate(newsScoLst):
+    for idx, (newsId, score) in enumerate(filterNewsLst):
         totalCnt += 1
         if len(tmpDct) >= 10:
             redisCli.zadd(ALG_EDITOR_REC_KEY, **tmpDct)
@@ -246,6 +276,7 @@ def main(media, project=settings.BOT_NAME):
         for urlSign, cleUrl, score in newsScoLst:
             mergeNewsScoLst.append((urlSign, score))
     # dump news score information to redis
+    sleep(60 * 10)
     dumpRedis(mergeNewsScoLst)
 
 if __name__ == '__main__':
