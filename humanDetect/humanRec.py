@@ -16,6 +16,7 @@ import logging
 import twitter
 import facebook
 from scrapyd_api import ScrapydAPI
+from dateutil.parser import parse as dataParser
 
 import settings
 from utils.signature import create_sign
@@ -121,7 +122,7 @@ def calculateSco(favoriteCnt, retweetCnt, createdTime):
     if createdTime >= NOW:
         span = 0
     else:
-        span = (NOW - createdTime).total_seconds() / 60
+        span = (NOW - createdTime).total_seconds() / 3600
     score *= pow(0.5, span)
     return score
 
@@ -156,9 +157,7 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                 favoriteCnt = statusObj.favorite_count
                 retweetCnt = statusObj.retweet_count
                 createdTime = statusObj.created_at
-                createdTime = ' '.join(createdTime.strip().split()[:4])
-                createdTime = datetime.strptime(createdTime,
-                        '%a %b %y %H:%M:%S')
+                createdTime = dateParser(createdTime, fuzzy=True)
                 logger.info(STATUS_LOG_MSG.format(
                     media=media,
                     statusId=statusId,
