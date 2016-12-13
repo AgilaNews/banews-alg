@@ -138,7 +138,7 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                 if not urlObj.expanded_url:
                     continue
                 orgUrl = urlObj.expanded_url
-                (cleUrl, code) = unshorten(orgUrl)
+                (cleUrl, code) = unshorten(orgUrl, timeout=30)
                 if code != 200:
                     logger.error(STATUS_LOG_ERR.format(
                         media=media,
@@ -147,6 +147,9 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                         code=code))
                     continue
                 if cleUrl:
+                    parsed = urlparse(cleUrl)
+                    cleUrl = '{uri.scheme}://{uri.netloc}{uri.path}'.format(
+                            uri=parsed)
                     urlSign = create_sign(cleUrl)
                 else:
                     urlSign = None
