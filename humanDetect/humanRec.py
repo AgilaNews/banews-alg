@@ -16,7 +16,7 @@ import logging
 import twitter
 import facebook
 from scrapyd_api import ScrapydAPI
-from dateutil.parser import parse as dataParser
+from dateutil.parser import parse as dateParser
 
 import settings
 from utils.signature import create_sign
@@ -158,6 +158,7 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                 retweetCnt = statusObj.retweet_count
                 createdTime = statusObj.created_at
                 createdTime = dateParser(createdTime, fuzzy=True)
+                createdTime.replace(tzinfo=None)
                 logger.info(STATUS_LOG_MSG.format(
                     media=media,
                     statusId=statusId,
