@@ -138,8 +138,8 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                 if not urlObj.expanded_url:
                     continue
                 orgUrl = urlObj.expanded_url
-                (cleUrl, code) = unshorten(orgUrl, timeout=30)
-                if code != 200:
+                (cleUrl, code) = unshorten(orgUrl, timeout=10)
+                if (code != 200) and (cleUrl == orgUrl):
                     logger.error(STATUS_LOG_ERR.format(
                         media=media,
                         statusId=statusId,
