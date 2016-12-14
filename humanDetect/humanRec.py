@@ -139,6 +139,24 @@ def unshortenUrl(media, statusId, url, depth):
             error=err))
         return None
 
+def unshortenUrlV2(url, timeout):
+    HTTP_HEADER = {
+        "User-Agent": 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 ' \
+                '(KHTML, like Gecko)  Chrome/47.0.2526.111 Safari/537.36',
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Encoding": "gzip,deflate,sdch",
+        "Connection": "keep-alive",
+        "Accept-Language": "nl-NL,nl;q=0.8,en-US;q=0.6,en;q=0.4",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache"
+    }
+    res = requests.head(url,
+                      headers=HTTP_HEADER,
+                      timeout=timeout,
+                      allow_redirects=True,
+                      verify=False)
+    return (res.url, res.status_code)
+
 def calculateSco(favoriteCnt, retweetCnt, createdTime):
     score = favoriteCnt + 3 * retweetCnt
     if createdTime >= NOW:
@@ -161,7 +179,8 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                 if not urlObj.expanded_url:
                     continue
                 orgUrl = urlObj.expanded_url
-                (cleUrl, code) = unshorten(orgUrl, timeout=10)
+                #(cleUrl, code) = unshorten(orgUrl, timeout=10)
+                (cleUrl, code) = unshortenUrlV2(orgUrl, timeout=10)
                 if (code != 200) and (cleUrl == orgUrl):
                     logger.error(STATUS_LOG_ERR.format(
                         media=media,
