@@ -150,12 +150,15 @@ def unshortenUrlV2(url, timeout):
         "Cache-Control": "no-cache",
         "Pragma": "no-cache"
     }
-    res = requests.head(url,
-                      headers=HTTP_HEADER,
-                      timeout=timeout,
-                      allow_redirects=True,
-                      verify=False)
-    return (res.url, res.status_code)
+    try:
+        res = requests.head(url,
+                          headers=HTTP_HEADER,
+                          timeout=timeout,
+                          allow_redirects=True,
+                          verify=False)
+        return (res.url, res.status_code)
+    except:
+        return (None, None)
 
 def calculateSco(favoriteCnt, retweetCnt, createdTime):
     score = favoriteCnt + 3 * retweetCnt
@@ -181,7 +184,8 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                 orgUrl = urlObj.expanded_url
                 #(cleUrl, code) = unshorten(orgUrl, timeout=10)
                 (cleUrl, code) = unshortenUrlV2(orgUrl, timeout=10)
-                if (code != 200) and (cleUrl == orgUrl):
+                if ((code != 200) and (cleUrl == orgUrl)) or \
+                        not cleUrl:
                     logger.error(STATUS_LOG_ERR.format(
                         media=media,
                         statusId=statusId,
