@@ -211,7 +211,7 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                 (cleUrl, code) = unshortenUrlV2(orgUrl, timeout=10)
                 if cleUrl and ('twitter.com' in cleUrl):
                     orgUrl = parsePage(screenName, statusId)
-                    (cleUrl, code) = unshortenUrlV2(cleUrl, timeout=10)
+                    (cleUrl, code) = unshortenUrlV2(orgUrl, timeout=10)
                 if ((code != 200) and (cleUrl == orgUrl)) or \
                         not cleUrl:
                     logger.error(STATUS_LOG_ERR.format(
