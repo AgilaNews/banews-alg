@@ -248,25 +248,19 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                     newsScoLst.append((urlSign, cleUrl, score))
     return newsScoLst
 
-def crawlNews(scrapydCli, project, spider, newsScoLst,
-        bulkSize=10):
-    bulkCnt = len(newsScoLst) / bulkSize + 1
-    for idx in range(bulkCnt):
-        startIdx = idx * bulkSize
-        endIdx = (idx + 1) * bulkSize
-        curUrlLst = newsScoLst[startIdx:endIdx]
-        if not curUrlLst:
-            continue
-        urlSigns = ','.join(map(lambda val: val[0], curUrlLst))
-        links = ','.join(map(lambda val: val[1], curUrlLst))
-        jobId = scrapydCli.schedule(project, spider,
-                links=links)
-        logger.info(CRAWL_LOG_MSG.format(
-            project=project,
-            spiderName=spider,
-            jobId=jobId,
-            newsCnt=len(curUrlLst),
-            newsSigns=urlSigns))
+def crawlNews(scrapydCli, project, spider, newsScoLst):
+    if len(newsScoLst) > 0:
+        return None
+    urlSigns = ','.join(map(lambda val: val[0], newsScoLst))
+    links = ','.join(map(lambda val: val[1], newsScoLst))
+    jobId = scrapydCli.schedule(project, spider,
+            links=links)
+    logger.info(CRAWL_LOG_MSG.format(
+        project=project,
+        spiderName=spider,
+        jobId=jobId,
+        newsCnt=len(curUrlLst),
+        newsSigns=urlSigns))
 
 def dumpRedis(newsScoLst):
     if not newsScoLst:
