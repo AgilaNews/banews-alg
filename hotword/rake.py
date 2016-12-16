@@ -136,7 +136,7 @@ class Rake(object):
         sorted_keywords = sorted(keyword_candidates.iteritems(), key=operator.itemgetter(1), reverse=True)
         resLst = []
         for item in sorted_keywords:
-            if item[1]>=6.0:
+            if item[1]>=5.0:
                 resLst.append(item[0])
         return resLst
 

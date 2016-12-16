@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import json
+import math
 import numpy
 from datetime import date, datetime, timedelta
 import MySQLdb
@@ -21,7 +22,20 @@ ATTRIBUTE_DIM = 9
         PUBLISH_TIME, FETCH_TIME, CONTENT, TYPE) = \
         range(ATTRIBUTE_DIM)
 
-MINTHRE_HAMMING_DISTANCE = 4
+BLACK_WORD_LST = ['daily inquirer', 'gmanews', 'manila times online',
+                    ]
+WORD_WRAP_DCT = {'nba':'NBA', 
+                    'i':'I',
+                    'ii':'II',
+                    'iii':'III',
+                    'iv':'IV',
+                    'v':'V',
+                    'vi':'VI',
+                    'vii':'VII',
+                    'viii':'VIII',
+                    'ix':'IX',
+                    'x':'X',
+                    }
 
 
 def getSpanNews(start_date=None, end_date=None):
@@ -41,7 +55,7 @@ def getSpanNews(start_date=None, end_date=None):
 select
     url_sign,
     title,
-    plain_text,
+    json_text,
     tag
 from
     tb_news
@@ -76,7 +90,7 @@ def stripTag(htmlStr):
     reg = re.compile(r'<[^>]+>', re.S)
     return reg.sub('', htmlStr)
 
-def filterDuplicate(tagLst):
+def filterDuplicateNews(tagLst):
     # tagLst = {tag:[n1,n2], tag2:[n2,n3]...}
     newsDct = {}
     resTagLst = []
@@ -96,29 +110,60 @@ def filterDuplicate(tagLst):
         resTagLst.append(tag)
     return resTagLst
 
-
-if __name__ == '__main__':
-    end_date = datetime.now()
-    start_date = datetime.now() - timedelta(hours=4)
-    newsLst = getSpanNews(start_date=start_date,
-                             end_date=end_date)
-    print len(newsLst), 'news fetched from database...'
-
+def recentKeywords(newsLst):
     rake = Rake("SmartStoplist.txt")
     tagDct = {}
-    
+    tagScoreDct = {}
     for news in newsLst:
         newsId = news[0]
         tags = news[3]
-        textStr = news[1]+' '+ news[1] + ' '+ news[2]
+        textStr = (news[1]+' ')*3 + news[2]
         tagLst = rake.run(stripTag(textStr))
-        for tag in tagLst:
+        for tag, score in tagLst:
+            score = math.log(score, 2)
             if tagDct.has_key(tag):
                 tagDct[tag].append(newsId)
             else:
                 tagDct[tag] = [newsId,]
-    hotTagLst = sorted(tagDct.items(), key=lambda d:len(d[1]), reverse=True)
-    filteredLst = filterDuplicate(hotTagLst)
-    print filteredLst[:50]
+            tagScoreDct[tag] = tagScoreDct.get(tag, 0.0) + score
 
+    hotTagLst = sorted(tagDct.items(), key=lambda d:tagScoreDct[d[0]], reverse=True)
+    hotTagLst = filterDuplicateNews(hotTagLst)
+    filterTagLst =  filter(filterBlackWord, hotTagLst)
+    return filterTagLst
 
+def filterBlackWord(tag):
+    if len(tag)<5:
+        return False
+    for word in BLACK_WORD_LST:
+        if word in tag:
+            return False
+    return True
+
+def wrapKeyword(tagLst):
+    kwLst = []
+    for tag in tagLst:
+        wrapLst = []
+        for word in tag.split(' '):
+            if WORD_WRAP_DCT.has_key(word):
+                wrapLst.append(WORD_WRAP_DCT[word])
+                continue
+            wrapLst.append(word.capitalize())
+        kwLst.append(' '.join(wrapLst))
+    return kwLst
+
+if __name__ == '__main__':
+    end_date = datetime.now()
+    start_date = datetime.now() - timedelta(hours=8)
+    #fetch news content from db
+    newsLst = getSpanNews(start_date=start_date,
+                             end_date=end_date)
+    print len(newsLst), 'news fetched from database...'
+    #extract keyword from newsLst
+    keywordLst = recentKeywords(newsLst)
+
+    keywordLst = wrapKeyword(keywordLst)
+
+    for item in keywordLst[:30]:
+        print item+'\t',
+    print '\n'
