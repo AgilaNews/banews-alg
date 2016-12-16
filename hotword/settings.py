@@ -5,7 +5,7 @@ import socket
 # mysql, redis & es configuration of local, sandbox & online environment
 HOSTNAME = socket.gethostname()
 RD_HOSTNAME_LST = ['banews', ]
-SANDBOX_HOSTNAME_LST = ['sandbox-1']
+SANDBOX_HOSTNAME_LST = ['sandbox-1', ]
 ONLINE_HOSTNAME_LST = ['spider-1', 'hadoop-1']
 if HOSTNAME in RD_HOSTNAME_LST:
     CURRENT_ENVIRONMENT_TAG = 'local'
@@ -13,7 +13,6 @@ elif HOSTNAME in SANDBOX_HOSTNAME_LST:
     CURRENT_ENVIRONMENT_TAG = 'sandbox'
 elif HOSTNAME in ONLINE_HOSTNAME_LST:
     CURRENT_ENVIRONMENT_TAG = 'online'
-    print 'online environment'
 else:
     CURRENT_ENVIRONMENT_TAG = None
     print "Spider doesn't deploy on local, sandbox or online machine, Error!!!"
