@@ -5,12 +5,13 @@ import sys
 import json
 import math
 import numpy
-from datetime import date, datetime, timedelta
 import MySQLdb
 import urllib
-from redis import Redis
 
 from rake import Rake
+from redis import Redis
+from optparse import OptionParser
+from datetime import date, datetime, timedelta
 import settings
 
 default_encoding = 'utf-8'
@@ -136,7 +137,7 @@ def filterDuplicateWord(tagLst):
                 wordDct[word] = 1
     return resTagLst
 
-def recentKeywords(newsLst):
+def recentKeywords(newsLst, count=10):
     rake = Rake("SmartStoplist.txt")
     tagDct = {}
     tagScoreDct = {}
@@ -156,8 +157,10 @@ def recentKeywords(newsLst):
     hotTagLst = sorted(tagDct.items(), key=lambda d:tagScoreDct[d[0]], reverse=True)
     hotTagLst = filterDuplicateNews(hotTagLst)
     hotTagLst = filterDuplicateWord(hotTagLst)
-    filterTagLst =  filter(filterBlackWord, hotTagLst)
-    return filterTagLst
+    keywordLst =  filter(filterBlackWord, hotTagLst)
+    keywordLst = wrapKeyword(keywordLst)[:count]
+    keywordLst = sorted(keywordLst, key=lambda d:len(d))
+    return keywordLst
 
 def filterBlackWord(tag):
     if len(tag)<5:
@@ -197,27 +200,69 @@ def dump(wordLst):
 
     if redisCli.exists(ALG_HOT_KEYWORDS_KEY):
         redisCli.delete(ALG_HOT_KEYWORDS_KEY)
+    print 'NEW ALG_HOT_KEYWORDS_KEY', wordLst
     tmpDct = {}
     for idx, word in enumerate(wordLst):
         tmpDct[idx] = word
     redisCli.hmset(ALG_HOT_KEYWORDS_KEY, tmpDct)
     print 'SUCCESS: UPDATE REDIS ALG_HOT_KEYWORDS_KEY'
 
+def updateKeyword(idx, word):
+    env = settings.CURRENT_ENVIRONMENT_TAG
+    envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
+    redisCfg = envCfg.get('news_queue_redis_config', {})
+    if not redisCfg:
+        print 'redis configuration not exist!'
+    redisCli = Redis(host=redisCfg['host'], port=redisCfg['port'])
+
+    print 'REDIS HOST=%s, UPDATING REDIS...' %redisCfg['host']
+
+    if redisCli.exists(ALG_HOT_KEYWORDS_KEY):
+        redisCli.delete(ALG_HOT_KEYWORDS_KEY)
+    print 'NEW ALG_HOT_KEYWORDS_KEY', idx, word
+    redisCli.hset(ALG_HOT_KEYWORDS_KEY, idx, word)
+    print 'SUCCESS: UPDATE REDIS ALG_HOT_KEYWORDS_KEY'
+
+def display(count=10):
+    env = settings.CURRENT_ENVIRONMENT_TAG
+    envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
+    redisCfg = envCfg.get('news_queue_redis_config', {})
+    if not redisCfg:
+        print 'redis configuration not exist!'
+    redisCli = Redis(host=redisCfg['host'], port=redisCfg['port'])
+    kwDct = redisCli.hscan(ALG_HOT_KEYWORDS_KEY)
+    if not kwDct:
+        print 'no value stored in the key'
+    else:
+        print kwDct
+    return kwDct
+
+
 if __name__ == '__main__':
-    end_date = datetime.now()
-    start_date = datetime.now() - timedelta(hours=6)
-    #fetch news content from db
-    newsLst = getSpanNews(start_date=start_date,
-                             end_date=end_date)
-    print len(newsLst), 'news fetched from database...'
-    #extract keyword from newsLst
-    keywordLst = recentKeywords(newsLst)
+    parser = OptionParser()
+    parser.add_option('-a', '--action', dest='action', default='extract')
+    parser.add_option('-t', '--times', dest='delta', default=4)
+    parser.add_option('-c', '--count', dest='count', default=10)
+    parser.add_option('-i', '--idx', dest='idx', default=-1)
+    parser.add_option('-w', '--word', dest='newWord', default='')
+    (options, args) = parser.parse_args()
+    if options.action == 'extract':
+        # update keywords
+        end_date = datetime.now()
+        start_date = datetime.now() - timedelta(hours=options.delta)
+        newsLst = getSpanNews(start_date=start_date,
+                                 end_date=end_date)
+        keywordLst = recentKeywords(newsLst, options.count)
+        dump(keywordLst)
+    elif options.action == 'show':
+        # show all keywords in redis key
+        kwDct = display(options.count)
+    elif options.action == 'update':
+        if options.idx < 0:
+            print 'function---dump(kwLst): update all keyword list with a new list'
+            print 'function---updateKeyword(idx, newWord): replace keyword at key idx with new word'
+        else:
+            updateKeyword(options.idx, options.newWord)
 
-    keywordLst = wrapKeyword(keywordLst)[:10]
+        
 
-    keywordLst = sorted(keywordLst, key=lambda d:len(d))
-
-    for item in keywordLst:
-        print item
-
-    dump(keywordLst)
