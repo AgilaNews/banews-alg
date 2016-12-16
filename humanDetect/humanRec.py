@@ -299,8 +299,10 @@ def main(media, project=settings.BOT_NAME):
         for urlSign, cleUrl, score in newsScoLst:
             mergeNewsScoLst.append((urlSign, score))
     # dump news score information to redis
+    logger.info('[Sleeping] start sleeping 10 mins...')
     sleep(60 * 10)
     dumpRedis(mergeNewsScoLst)
+    logger.info('[Finish] dumping data to redis successfully')
 
 if __name__ == '__main__':
     main(TWITTER)
