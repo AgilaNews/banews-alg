@@ -258,7 +258,7 @@ def crawlNews(scrapydCli, project, spider, newsScoLst):
             project=project,
             spiderName=spider,
             jobId=jobId,
-            newsCnt=len(curUrlLst),
+            newsCnt=len(newsScoLst),
             newsSigns=urlSigns))
 
 def dumpRedis(newsScoLst):
