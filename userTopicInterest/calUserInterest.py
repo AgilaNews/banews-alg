@@ -248,8 +248,7 @@ def getUserInterest(logRdd, bCategoryDct):
             )
     return interestRdd
 
-def dump(interestRdd):
-    env = settings.CURRENT_ENVIRONMENT_TAG
+def dump(interestRdd, env):
     envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
     redisCfg = envCfg.get('news_queue_redis_config', {})
     if not redisCfg:
@@ -276,7 +275,7 @@ def dump(interestRdd):
 if __name__ == '__main__':
     sc = SparkContext(appName='newsTrend/limeng')
     end_date = date.today()
-    start_date = end_date - timedelta(days=60)
+    start_date = end_date - timedelta(days=45)
     logRdd = getActionLog(sc, start_date, end_date)
     logRdd = logRdd.cache()
     # category distribution each week
@@ -284,5 +283,6 @@ if __name__ == '__main__':
     bCategoryDct = sc.broadcast(categoryDct)
     # combine user's short-term & long-term interest
     interestRdd = getUserInterest(logRdd, bCategoryDct)
-    dump(interestRdd)
+    dump(interestRdd, 'sandbox')
+    dump(interestRdd, 'online')
 

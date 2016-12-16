@@ -129,6 +129,11 @@ def calcNewsUV(sc, start_date, end_date):
     fileLst = getSpanRdd(start_date, end_date)
     uvRdd = sc.textFile(','.join(fileLst)).map(
             lambda dctStr: json.loads(dctStr)
+        ).filter(
+            lambda attrDct: ('event-id' in attrDct) and \
+                            ('time' in attrDct) and \
+                            ('news_id' in attrDct) and \
+                            ('did' in attrDct)
         ).map(
             lambda attrDct: (attrDct.get('event-id'),
                              attrDct.get('did'),

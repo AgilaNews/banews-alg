@@ -94,7 +94,7 @@ def calcNewsScore(sc, start_date, end_date, dTopTopicDct):
                              getTransferTime(float(attrDct.get('time'))/1000))
         ).filter(
             lambda (eventId, did, newsId, timestamp): \
-                    (eventId in VALID_EVENTID_LST) \
+                    timestamp and (eventId in VALID_EVENTID_LST) \
                     and (((NOW - timestamp).total_seconds() / (60 * 60.)) <= 24)
         ).cache()
     # score foreach news
@@ -122,8 +122,7 @@ def calcNewsScore(sc, start_date, end_date, dTopTopicDct):
     recentTopicLst = topicRdd.collect()
     return (newsScoLst, recentTopicLst)
 
-def dump(scoLst, topicLst):
-    env = settings.CURRENT_ENVIRONMENT_TAG
+def dump(scoLst, topicLst, env):
     envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
     redisCfg = envCfg.get('news_queue_redis_config', {})
     if not redisCfg:
@@ -167,4 +166,6 @@ if __name__ == '__main__':
     start_date = end_date - timedelta(days=2)
     (newsScoLst, recentTopicLst) = calcNewsScore(sc,
             start_date, end_date, dTopTopicDct)
-    dump(newsScoLst, recentTopicLst)
+    # dump model to sandbox & online
+    dump(newsScoLst, recentTopicLst, 'sandbox')
+    dump(newsScoLst, recentTopicLst, 'online')

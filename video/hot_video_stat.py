@@ -27,7 +27,10 @@ def line_tran(line):
 
 def action_filter(line, start, end):
     tm = datetime.fromtimestamp(int(line.get("time", 0))/1000).date()
-    tm = getTransferTime(line.get("time")).date()
+    tm = getTransferTime(line.get("time"))
+    if not tm:
+        return False
+    tm = tm.date()
     did = line.get("did", None)
     if not did:
         return False
@@ -169,7 +172,7 @@ def update_video_hot_queue(hotvideo, channelId, redisCli):
     hotkey = REDIS_POPULAR_NEWS_PREFIX % channelId
     if redisCli.exists(hotkey):
         redisCli.delete(hotkey)
-    for nid, url, rate, show, click in hotvideo[0:200]:
+    for nid, url, rate, show, click in hotvideo[0:100]:
         redisCli.rpush(hotkey, nid)
 
 
