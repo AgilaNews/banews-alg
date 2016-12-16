@@ -249,7 +249,7 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
     return newsScoLst
 
 def crawlNews(scrapydCli, project, spider, newsScoLst):
-    if len(newsScoLst) > 0:
+    if newsScoLst:
         return None
     urlSigns = ','.join(map(lambda val: val[0], newsScoLst))
     links = ','.join(map(lambda val: val[1], newsScoLst))
