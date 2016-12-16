@@ -250,17 +250,16 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
 
 def crawlNews(scrapydCli, project, spider, newsScoLst):
     if newsScoLst:
-        return None
-    urlSigns = ','.join(map(lambda val: val[0], newsScoLst))
-    links = ','.join(map(lambda val: val[1], newsScoLst))
-    jobId = scrapydCli.schedule(project, spider,
-            links=links)
-    logger.info(CRAWL_LOG_MSG.format(
-        project=project,
-        spiderName=spider,
-        jobId=jobId,
-        newsCnt=len(curUrlLst),
-        newsSigns=urlSigns))
+        urlSigns = ','.join(map(lambda val: val[0], newsScoLst))
+        links = ','.join(map(lambda val: val[1], newsScoLst))
+        jobId = scrapydCli.schedule(project, spider,
+                links=links)
+        logger.info(CRAWL_LOG_MSG.format(
+            project=project,
+            spiderName=spider,
+            jobId=jobId,
+            newsCnt=len(curUrlLst),
+            newsSigns=urlSigns))
 
 def dumpRedis(newsScoLst):
     if not newsScoLst:
