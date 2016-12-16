@@ -275,7 +275,9 @@ def dumpRedis(newsScoLst):
             resDct = esCli.get(index=indexKey,
                             doc_type=typeKey,
                             id=newsId)
-            if resDct['_source'].get('plain_text'):
+            if resDct['_source'].get('plain_text') and \
+                    resDct['_source'].get('title') and \
+                    resDct['_source'].get('post_timestamp'):
                 filterNewsLst.append((newsId, sco))
         except:
             continue
