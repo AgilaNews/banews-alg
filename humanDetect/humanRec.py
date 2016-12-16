@@ -13,6 +13,10 @@ from unshortenit import unshorten
 import requests
 import logging
 from time import sleep
+import lxml
+import lxml.html
+from bs4 import UnicodeDammit
+import re
 
 import twitter
 import facebook
@@ -169,6 +173,27 @@ def calculateSco(favoriteCnt, retweetCnt, createdTime):
     score *= pow(0.5, span)
     return score
 
+def parsePage(screenName, statusId):
+    link = 'https://mobile.twitter.com/{screenName}/status/{statusId}'.format(
+                screenName=screenName,
+                statusId=statusId
+            )
+    r = requests.get(link)
+    if r.status_code == 200:
+        if isinstance(r.text, unicode):
+            text = r.text
+        else:
+            converted = UnicodeDammit(r.text, is_html=True)
+            text = converted.unicode_markup
+        if text.startswith('<?'):
+            text = re.sub(r'^\<\?.*?\?\>', '', text, flags=re.DOTALL)
+        domEle = lxml.html.fromstring(text)
+        resLst = domEle.xpath('//div[@data-id="%s"]//a[@title]/' \
+                '@data-expanded-url'%statusId)
+        if resLst:
+            return resLst[0]
+    return None
+
 def getUserTweets(media, api, spiderName, screenName, count=50):
     statusLst = api.GetUserTimeline(screen_name=screenName,
                                     exclude_replies=False,
@@ -192,6 +217,8 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                         orgUrl=orgUrl,
                         code=code))
                     continue
+                if cleUrl and ('twitter.com' in cleUrl):
+                    cleUrl = parsePage(screenName, statusId)
                 if cleUrl:
                     parsed = urlparse(cleUrl)
                     cleUrl = '{uri.scheme}://{uri.netloc}{uri.path}'.format(
