@@ -45,6 +45,7 @@ STATUS_LOG_ERR = '[Posting] Media:{media}, StatusId:{statusId}, ' \
 CRAWL_LOG_MSG = '[Crawling] Project:{project}, Spider:{spiderName}, ' \
         'JobId:{jobId}, NewsCnt:{newsCnt}, NewsSigns:{newsSigns}'
 REDIS_LOG_MSG = '[Redising] NewsCnt:{newsCnt}, NewsSigns:{newsSigns}'
+requests.packages.urllib3.disable_warnings()
 
 kDIR = os.path.dirname(os.path.abspath(__file__))
 (TWITTER, FACEBOOK) = ('Twitter', 'Facebook')
