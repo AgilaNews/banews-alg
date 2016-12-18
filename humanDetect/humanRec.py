@@ -13,6 +13,10 @@ from unshortenit import unshorten
 import requests
 import logging
 from time import sleep
+import lxml
+import lxml.html
+from bs4 import UnicodeDammit
+import re
 
 import twitter
 import facebook
@@ -41,6 +45,7 @@ STATUS_LOG_ERR = '[Posting] Media:{media}, StatusId:{statusId}, ' \
 CRAWL_LOG_MSG = '[Crawling] Project:{project}, Spider:{spiderName}, ' \
         'JobId:{jobId}, NewsCnt:{newsCnt}, NewsSigns:{newsSigns}'
 REDIS_LOG_MSG = '[Redising] NewsCnt:{newsCnt}, NewsSigns:{newsSigns}'
+requests.packages.urllib3.disable_warnings()
 
 kDIR = os.path.dirname(os.path.abspath(__file__))
 (TWITTER, FACEBOOK) = ('Twitter', 'Facebook')
@@ -139,6 +144,27 @@ def unshortenUrl(media, statusId, url, depth):
             error=err))
         return None
 
+def unshortenUrlV2(url, timeout):
+    HTTP_HEADER = {
+        "User-Agent": 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 ' \
+                '(KHTML, like Gecko)  Chrome/47.0.2526.111 Safari/537.36',
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Encoding": "gzip,deflate,sdch",
+        "Connection": "keep-alive",
+        "Accept-Language": "nl-NL,nl;q=0.8,en-US;q=0.6,en;q=0.4",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache"
+    }
+    try:
+        res = requests.head(url,
+                          headers=HTTP_HEADER,
+                          timeout=timeout,
+                          allow_redirects=True,
+                          verify=False)
+        return (res.url, res.status_code)
+    except:
+        return (None, None)
+
 def calculateSco(favoriteCnt, retweetCnt, createdTime):
     score = favoriteCnt + 3 * retweetCnt
     if createdTime >= NOW:
@@ -147,6 +173,27 @@ def calculateSco(favoriteCnt, retweetCnt, createdTime):
         span = (NOW - createdTime).total_seconds() / 3600
     score *= pow(0.5, span)
     return score
+
+def parsePage(screenName, statusId):
+    link = 'https://mobile.twitter.com/{screenName}/status/{statusId}'.format(
+                screenName=screenName,
+                statusId=statusId
+            )
+    r = requests.get(link)
+    if r.status_code == 200:
+        if isinstance(r.text, unicode):
+            text = r.text
+        else:
+            converted = UnicodeDammit(r.text, is_html=True)
+            text = converted.unicode_markup
+        if text.startswith('<?'):
+            text = re.sub(r'^\<\?.*?\?\>', '', text, flags=re.DOTALL)
+        domEle = lxml.html.fromstring(text)
+        resLst = domEle.xpath('//div[@data-id="%s"]//a[@title]/' \
+                '@data-expanded-url'%statusId)
+        if resLst:
+            return resLst[0]
+    return None
 
 def getUserTweets(media, api, spiderName, screenName, count=50):
     statusLst = api.GetUserTimeline(screen_name=screenName,
@@ -161,8 +208,13 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                 if not urlObj.expanded_url:
                     continue
                 orgUrl = urlObj.expanded_url
-                (cleUrl, code) = unshorten(orgUrl, timeout=10)
-                if (code != 200) and (cleUrl == orgUrl):
+                #(cleUrl, code) = unshorten(orgUrl, timeout=10)
+                (cleUrl, code) = unshortenUrlV2(orgUrl, timeout=10)
+                if cleUrl and ('twitter.com' in cleUrl):
+                    orgUrl = parsePage(screenName, statusId)
+                    (cleUrl, code) = unshortenUrlV2(orgUrl, timeout=10)
+                if ((code != 200) and (cleUrl == orgUrl)) or \
+                        not cleUrl:
                     logger.error(STATUS_LOG_ERR.format(
                         media=media,
                         statusId=statusId,
@@ -170,9 +222,9 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                         code=code))
                     continue
                 if cleUrl:
-                    parsed = urlparse(cleUrl)
-                    cleUrl = '{uri.scheme}://{uri.netloc}{uri.path}'.format(
-                            uri=parsed)
+                    #parsed = urlparse(cleUrl)
+                    #cleUrl = '{uri.scheme}://{uri.netloc}{uri.path}'.format(
+                    #        uri=parsed)
                     urlSign = create_sign(cleUrl)
                 else:
                     urlSign = None
@@ -196,24 +248,17 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                     newsScoLst.append((urlSign, cleUrl, score))
     return newsScoLst
 
-def crawlNews(scrapydCli, project, spider, newsScoLst,
-        bulkSize=10):
-    bulkCnt = len(newsScoLst) / bulkSize + 1
-    for idx in range(bulkCnt):
-        startIdx = idx * bulkSize
-        endIdx = (idx + 1) * bulkSize
-        curUrlLst = newsScoLst[startIdx:endIdx]
-        if not curUrlLst:
-            continue
-        urlSigns = ','.join(map(lambda val: val[0], curUrlLst))
-        links = ','.join(map(lambda val: val[1], curUrlLst))
+def crawlNews(scrapydCli, project, spider, newsScoLst):
+    if newsScoLst:
+        urlSigns = ','.join(map(lambda val: val[0], newsScoLst))
+        links = ','.join(map(lambda val: val[1], newsScoLst))
         jobId = scrapydCli.schedule(project, spider,
                 links=links)
         logger.info(CRAWL_LOG_MSG.format(
             project=project,
             spiderName=spider,
             jobId=jobId,
-            newsCnt=len(curUrlLst),
+            newsCnt=len(newsScoLst),
             newsSigns=urlSigns))
 
 def dumpRedis(newsScoLst):
@@ -230,7 +275,9 @@ def dumpRedis(newsScoLst):
             resDct = esCli.get(index=indexKey,
                             doc_type=typeKey,
                             id=newsId)
-            if resDct['_source'].get('plain_text'):
+            if resDct['_source'].get('plain_text') and \
+                    resDct['_source'].get('title') and \
+                    resDct['_source'].get('post_timestamp'):
                 filterNewsLst.append((newsId, sco))
         except:
             continue
@@ -276,8 +323,10 @@ def main(media, project=settings.BOT_NAME):
         for urlSign, cleUrl, score in newsScoLst:
             mergeNewsScoLst.append((urlSign, score))
     # dump news score information to redis
+    logger.info('[Sleeping] start sleeping 10 mins...')
     sleep(60 * 10)
     dumpRedis(mergeNewsScoLst)
+    logger.info('[Finish] dumping data to redis successfully')
 
 if __name__ == '__main__':
     main(TWITTER)
