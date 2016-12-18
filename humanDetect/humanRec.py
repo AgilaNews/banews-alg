@@ -13,6 +13,10 @@ from unshortenit import unshorten
 import requests
 import logging
 from time import sleep
+import lxml
+import lxml.html
+from bs4 import UnicodeDammit
+import re
 
 import twitter
 import facebook
@@ -41,6 +45,7 @@ STATUS_LOG_ERR = '[Posting] Media:{media}, StatusId:{statusId}, ' \
 CRAWL_LOG_MSG = '[Crawling] Project:{project}, Spider:{spiderName}, ' \
         'JobId:{jobId}, NewsCnt:{newsCnt}, NewsSigns:{newsSigns}'
 REDIS_LOG_MSG = '[Redising] NewsCnt:{newsCnt}, NewsSigns:{newsSigns}'
+requests.packages.urllib3.disable_warnings()
 
 kDIR = os.path.dirname(os.path.abspath(__file__))
 (TWITTER, FACEBOOK) = ('Twitter', 'Facebook')
@@ -169,6 +174,27 @@ def calculateSco(favoriteCnt, retweetCnt, createdTime):
     score *= pow(0.5, span)
     return score
 
+def parsePage(screenName, statusId):
+    link = 'https://mobile.twitter.com/{screenName}/status/{statusId}'.format(
+                screenName=screenName,
+                statusId=statusId
+            )
+    r = requests.get(link)
+    if r.status_code == 200:
+        if isinstance(r.text, unicode):
+            text = r.text
+        else:
+            converted = UnicodeDammit(r.text, is_html=True)
+            text = converted.unicode_markup
+        if text.startswith('<?'):
+            text = re.sub(r'^\<\?.*?\?\>', '', text, flags=re.DOTALL)
+        domEle = lxml.html.fromstring(text)
+        resLst = domEle.xpath('//div[@data-id="%s"]//a[@title]/' \
+                '@data-expanded-url'%statusId)
+        if resLst:
+            return resLst[0]
+    return None
+
 def getUserTweets(media, api, spiderName, screenName, count=50):
     statusLst = api.GetUserTimeline(screen_name=screenName,
                                     exclude_replies=False,
@@ -184,6 +210,9 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                 orgUrl = urlObj.expanded_url
                 #(cleUrl, code) = unshorten(orgUrl, timeout=10)
                 (cleUrl, code) = unshortenUrlV2(orgUrl, timeout=10)
+                if cleUrl and ('twitter.com' in cleUrl):
+                    orgUrl = parsePage(screenName, statusId)
+                    (cleUrl, code) = unshortenUrlV2(orgUrl, timeout=10)
                 if ((code != 200) and (cleUrl == orgUrl)) or \
                         not cleUrl:
                     logger.error(STATUS_LOG_ERR.format(
@@ -193,9 +222,9 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                         code=code))
                     continue
                 if cleUrl:
-                    parsed = urlparse(cleUrl)
-                    cleUrl = '{uri.scheme}://{uri.netloc}{uri.path}'.format(
-                            uri=parsed)
+                    #parsed = urlparse(cleUrl)
+                    #cleUrl = '{uri.scheme}://{uri.netloc}{uri.path}'.format(
+                    #        uri=parsed)
                     urlSign = create_sign(cleUrl)
                 else:
                     urlSign = None
@@ -219,24 +248,17 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                     newsScoLst.append((urlSign, cleUrl, score))
     return newsScoLst
 
-def crawlNews(scrapydCli, project, spider, newsScoLst,
-        bulkSize=10):
-    bulkCnt = len(newsScoLst) / bulkSize + 1
-    for idx in range(bulkCnt):
-        startIdx = idx * bulkSize
-        endIdx = (idx + 1) * bulkSize
-        curUrlLst = newsScoLst[startIdx:endIdx]
-        if not curUrlLst:
-            continue
-        urlSigns = ','.join(map(lambda val: val[0], curUrlLst))
-        links = ','.join(map(lambda val: val[1], curUrlLst))
+def crawlNews(scrapydCli, project, spider, newsScoLst):
+    if newsScoLst:
+        urlSigns = ','.join(map(lambda val: val[0], newsScoLst))
+        links = ','.join(map(lambda val: val[1], newsScoLst))
         jobId = scrapydCli.schedule(project, spider,
                 links=links)
         logger.info(CRAWL_LOG_MSG.format(
             project=project,
             spiderName=spider,
             jobId=jobId,
-            newsCnt=len(curUrlLst),
+            newsCnt=len(newsScoLst),
             newsSigns=urlSigns))
 
 def dumpRedis(newsScoLst):
@@ -253,7 +275,9 @@ def dumpRedis(newsScoLst):
             resDct = esCli.get(index=indexKey,
                             doc_type=typeKey,
                             id=newsId)
-            if resDct['_source'].get('plain_text'):
+            if resDct['_source'].get('plain_text') and \
+                    resDct['_source'].get('title') and \
+                    resDct['_source'].get('post_timestamp'):
                 filterNewsLst.append((newsId, sco))
         except:
             continue
