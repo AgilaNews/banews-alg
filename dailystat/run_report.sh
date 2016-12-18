@@ -56,3 +56,4 @@ sh run.sh daily_stat.py
 sh run.sh install_stat.py
 sh run.sh channelAnalysis.py 
 sh run.sh video_stat.py 
+sh run.sh install_stat_new.py
