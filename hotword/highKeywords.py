@@ -23,7 +23,7 @@ ALG_HOT_KEYWORDS_KEY = 'ALG_HOT_KEYWORDS_KEY'
 
 BLACK_WORD_LST = ['daily inquirer', 'gmanews', 'manila times online',
                   'news portal', 'rappler', 'tmz', 'article originally',
-                  ]
+                  'abs-cbn',]
 WORD_WRAP_DCT = {
         'nba':'NBA', 
         'i':'I',
@@ -39,8 +39,8 @@ WORD_WRAP_DCT = {
         }
 ABBR_WRAP_DCT = {
     'president ': '',
-    'united states': 'US',
-    'united kingdom': 'UK',
+    'united states': 'US.',
+    'united kingdom': 'UK.',
     'united nation': 'UN',
     'philippine ': 'PH. ',
     }
@@ -153,13 +153,12 @@ def recentKeywords(newsLst, count=10):
             else:
                 tagDct[tag] = [newsId,]
             tagScoreDct[tag] = tagScoreDct.get(tag, 0.0) + score
-
+    
     hotTagLst = sorted(tagDct.items(), key=lambda d:tagScoreDct[d[0]], reverse=True)
     hotTagLst = filterDuplicateNews(hotTagLst)
     hotTagLst = filterDuplicateWord(hotTagLst)
     keywordLst =  filter(filterBlackWord, hotTagLst)
     keywordLst = wrapKeyword(keywordLst)[:count]
-    keywordLst = sorted(keywordLst, key=lambda d:len(d))
     return keywordLst
 
 def filterBlackWord(tag):
@@ -242,9 +241,10 @@ if __name__ == '__main__':
     parser = OptionParser()
     parser.add_option('-a', '--action', dest='action', default='extract')
     parser.add_option('-t', '--times', dest='delta', default=4)
-    parser.add_option('-c', '--count', dest='count', default=10)
+    parser.add_option('-c', '--count', dest='count', default=20)
     parser.add_option('-i', '--idx', dest='idx', default=-1)
     parser.add_option('-w', '--word', dest='newWord', default='')
+    parser.add_option('-s', '--sort', dest='isSorted', default=False)
     (options, args) = parser.parse_args()
     if options.action == 'extract':
         # update keywords
@@ -253,6 +253,8 @@ if __name__ == '__main__':
         newsLst = getSpanNews(start_date=start_date,
                                  end_date=end_date)
         keywordLst = recentKeywords(newsLst, options.count)
+        if options.isSorted == True:
+            keywordLst = sorted(keywordLst, key=lambda d:len(d))
         dump(keywordLst)
     elif options.action == 'show':
         # show all keywords in redis key
