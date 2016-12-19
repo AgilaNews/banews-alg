@@ -132,7 +132,6 @@ def arrToStr(topicArr):
     return tempStr[:-1]
 
 def dump(sc, newsTopicLst):
-    fileName = 'input.dat'
     sc.parallelize(newsTopicLst).map(
             lambda (newsId, topicArr): \
                     (newsId, arrToStr(topicArr))
@@ -144,7 +143,7 @@ def dump(sc, newsTopicLst):
 if __name__ == '__main__':
     sc = SparkContext(appName='newsTopic/limeng')
     end_date = date.today() + timedelta(days=1)
-    start_date = date.today() - timedelta(days=1)
+    start_date = date.today() - timedelta(days=5)
     newsDocLst = getSpanNews(start_date=start_date,
                              end_date=end_date)
     newsTopicLst = predict(newsDocLst)

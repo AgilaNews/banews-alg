@@ -17,7 +17,7 @@ else:
     CURRENT_ENVIRONMENT_TAG = None
     print "Spider doesn't deploy on local, sandbox or online machine, Error!!!"
     exit(0)
-#CURRENT_ENVIRONMENT_TAG = 'local'
+CURRENT_ENVIRONMENT_TAG = 'sandbox'
 
 ENVIRONMENT_CONFIG = {
     "local": {

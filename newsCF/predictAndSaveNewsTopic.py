@@ -131,7 +131,6 @@ def arrToStr(topicArr):
     return tempStr[:-1]
 
 def dump(sc, newsTopicLst):
-    fileName = 'input.dat'
     sc.parallelize(newsTopicLst).map(
             lambda (newsId, topicArr): \
                     (newsId, arrToStr(topicArr))

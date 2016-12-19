@@ -140,7 +140,7 @@ def predict(newsDocLst):
 
 if __name__ == '__main__':
     end_date = date.today() + timedelta(days=1)
-    start_date = date.today() - timedelta(days=15)
+    start_date = date.today() - timedelta(days=10)
     #select news(id, title, json_text, time) from mysql
     newsDocLst = getSpanNews(start_date=start_date,
                              end_date=end_date)

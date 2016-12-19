@@ -31,7 +31,6 @@ def dump(sc, newsSimStr):
     redisCfg = envCfg.get('news_queue_redis_config', {})
     if not redisCfg:
         print 'redis configuration not exist!'
-        exit(0)
     redisCli = Redis(host=redisCfg['host'], port=redisCfg['port'])
 
     if redisCli.exists(ALG_TOPIC_SIMILARITY_KEY):
@@ -44,10 +43,14 @@ def dump(sc, newsSimStr):
             print '%s remaining...' % (len(newsSimStr) - totalCnt)
             redisCli.hmset(ALG_TOPIC_SIMILARITY_KEY, tmpDct)
             tmpDct = {}
-        [newsId, simNews] = line.strip().split('\t')
+        arrs = line.strip().split('\t')
+        newsId = arrs[0]
+        simNews = arrs[1]
         simNewsDct = {}
         for item in simNews.split(';'):
-            [newsId2, newsWeight] = item.split(':')
+            tmpArr = item.split(':')
+            newsId2 = tmpArr[0]
+            newsWeight = tmpArr[1]
             simNewsDct[newsId2] = float(newsWeight)
         tmpDct[newsId] = json.dumps(simNewsDct)
     if len(tmpDct):

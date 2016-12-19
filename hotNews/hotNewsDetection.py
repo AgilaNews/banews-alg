@@ -20,7 +20,7 @@ ATTRIBUTE_DIM = 9
         PUBLISH_TIME, FETCH_TIME, CONTENT, TYPE) = \
         range(ATTRIBUTE_DIM)
 
-MINTHRE_HAMMING_DISTANCE = 6
+MINTHRE_HAMMING_DISTANCE = 4
 
 log_file = open('hotnews.log','w')
 
@@ -142,7 +142,7 @@ def checkCluster(clusterLst, newsLst):
 
 if __name__ == '__main__':
     end_date = date.today() + timedelta(days=1)
-    start_date = date.today() - timedelta(days=1)
+    start_date = date.today() - timedelta(days=2)
     newsLst = getSpanNews(start_date=start_date,
                              end_date=end_date)
 

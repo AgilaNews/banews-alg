@@ -5,7 +5,7 @@ import socket
 # mysql, redis & es configuration of local, sandbox & online environment
 HOSTNAME = socket.gethostname()
 RD_HOSTNAME_LST = ['banews', ]
-SANDBOX_HOSTNAME_LST = ['sandbox-1', ]
+SANDBOX_HOSTNAME_LST = ['sandbox-1']
 ONLINE_HOSTNAME_LST = ['spider-1', 'hadoop-1']
 if HOSTNAME in RD_HOSTNAME_LST:
     CURRENT_ENVIRONMENT_TAG = 'local'

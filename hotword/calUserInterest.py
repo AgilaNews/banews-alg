@@ -20,18 +20,6 @@ TODAY_LOG_DIR = '/banews/useraction.log-*'
 HISTORY_LOG_DIR = '/banews/useraction'
 
 HADOOP_BIN = '/home/work/hadoop-2.6.0-cdh5.7.0/bin/hadoop'
-ARTICLE_DISPLAY = '020104'
-ARTICLE_CLICK = '020103'
-ARTICLE_LIKE = '020204'
-ARTICLE_COLLECT = '020205'
-GRAVITY = 20.
-NEWS_TOPICS_PATH = '/data/userTopicDis/model/newsTopic.d'
-MIN_NEWS_TOPIC_WEIGHT = 0.1
-MIN_USER_ACTION_CNT = 20
-USER_TOPIC_INTEREST_DIR = '/user/limeng/userTopicInterest'
-ALG_USER_TOPIC_KEY = 'ALG_USER_TOPIC_KEY'
-ALG_TOPIC_GRAVITY_KEY = 'ALG_TOPIC_GRAVITY_KEY'
-
 
 def getSpanFileLst(start_date, end_date, withToday=False):
     fileLst = []
