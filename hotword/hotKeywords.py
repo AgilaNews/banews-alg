@@ -18,6 +18,8 @@ import settings
 from rake import Rake
 from optparse import OptionParser
 
+DEBUG = True
+
 default_encoding = 'utf-8'
 if sys.getdefaultencoding() != default_encoding:
     reload(sys)
@@ -107,25 +109,27 @@ def stripTag(htmlStr):
     reg = re.compile(r'<[^>]+>', re.S)
     return reg.sub('', htmlStr)
 
-def filterDuplicateNews(tagLst):
+def filterDuplicateNews(tagScoreLst, tagNewsDct):
     # tagLst = {tag:[n1,n2], tag2:[n2,n3]...}
     # filter tag according to their source
     newsDct = {}
     resTagLst = []
-    for tag, newsLst in tagLst:
+    for tag, _score in tagScoreLst:
         flag = False
+        newsLst = tagNewsDct[tag]
         for news in newsLst:
             if newsDct.get(news, 0)>=2:
                 flag = True
                 break
         if flag==True:
+            #skip this tag
             continue
         for news in newsLst:
             if not newsDct.has_key(news):
                 newsDct[news] = 1
             else:
                 newsDct[news] = newsDct[news]+1
-        resTagLst.append(tag)
+        resTagLst.append((tag,_score))
     return resTagLst
 
 def filterDuplicateWord(tagLst):
@@ -134,7 +138,7 @@ def filterDuplicateWord(tagLst):
     # 1.form word diction with word of tag
     wordDct = {}
     resTagLst = []
-    for tag in tagLst:
+    for tag, _score in tagLst:
         flag = True
         wordLst = tag.strip().split(' ')
         for word in wordLst:
@@ -142,14 +146,14 @@ def filterDuplicateWord(tagLst):
                 flag = False
                 break
         if flag:
-            resTagLst.append(tag)
+            resTagLst.append((tag, _score))
             for word in wordLst:
                 wordDct[word] = 1
     return resTagLst
 
 def recentKeywords(newsLst, count=10):
     rake = Rake("SmartStoplist.txt")
-    tagDct = {}
+    tagNewsDct = {}
     tagScoreDct = {}
     for news in newsLst:
         newsId = news[0]
@@ -158,10 +162,10 @@ def recentKeywords(newsLst, count=10):
         tagLst = rake.run(stripTag(textStr))
         for tag, score in tagLst:
             score = math.log(score, 2)
-            if tagDct.has_key(tag):
-                tagDct[tag].append(newsId)
+            if tagNewsDct.has_key(tag):
+                tagNewsDct[tag].append(newsId)
             else:
-                tagDct[tag] = [newsId,]
+                tagNewsDct[tag] = [newsId,]
             tagScoreDct[tag] = tagScoreDct.get(tag, 0.0) + score
     # fix tagScoreDct with user query log 
     sc = SparkContext(appName='hotQuery/zhangyaxuan')
@@ -170,32 +174,33 @@ def recentKeywords(newsLst, count=10):
     logRdd = getActionLog(sc, start_date, end_date)
     hotQueryLst = sorted(logRdd.collect(), key=lambda d:d[1], reverse=True)
 
-    print "Hot Query By User:", hotQueryLst[:10]
+    if DEBUG: print "Hot Query By User:", hotQueryLst[:10]
     for query, countQuery in hotQueryLst:
         score = countQuery**0.5 
         tagScoreDct[tag] = tagScoreDct.get(tag, 0.0) + score
-    hotTagLst = sorted(tagDct.items(), key=lambda d:tagScoreDct[d[0]], reverse=True)
+    hotTagLst = sorted(tagScoreDct.items(), key=lambda d:d[1], reverse=True)
+    if DEBUG: print "hotTagLst after sorted:", hotTagLst[:10]
 
     #filter hot query list from same news or having same word
-    hotTagLst = filterDuplicateNews(hotTagLst)
+    hotTagLst = filterDuplicateNews(hotTagLst, tagNewsDct)
     hotTagLst = filterDuplicateWord(hotTagLst)
     keywordLst =  filter(filterBlackWord, hotTagLst)
     keywordLst = wrapKeyword(keywordLst)[:count]
     return keywordLst
 
-def filterBlackWord(tag):
-    if len(tag)<5:
+def filterBlackWord(item):
+    if len(item[0])<5:
         return False
-    if len(tag.strip().split(' '))>3:
+    if len(item[0].strip().split(' '))>3:
         return False
     for word in BLACK_WORD_LST:
-        if word in tag:
+        if word in item[0]:
             return False
     return True
 
 def wrapKeyword(tagLst):
     kwLst = []
-    for tag in tagLst:
+    for tag, _score in tagLst:
         for abbr in ABBR_WRAP_DCT:
             tag = tag.replace(abbr, ABBR_WRAP_DCT[abbr])
         wrapLst = []
@@ -206,11 +211,10 @@ def wrapKeyword(tagLst):
             if word.islower():
                 word = word.capitalize()
             wrapLst.append(word)
-        kwLst.append(' '.join(wrapLst))
+        kwLst.append((' '.join(wrapLst), _score))
     return kwLst
 
-def dump(wordLst):
-    env = settings.CURRENT_ENVIRONMENT_TAG
+def dump(wordScoreLst, env='online'):
     envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
     redisCfg = envCfg.get('news_queue_redis_config', {})
     if not redisCfg:
@@ -221,10 +225,10 @@ def dump(wordLst):
 
     if redisCli.exists(ALG_HOT_KEYWORDS_KEY):
         redisCli.delete(ALG_HOT_KEYWORDS_KEY)
-    print 'NEW ALG_HOT_KEYWORDS_KEY', wordLst
+    print 'NEW ALG_HOT_KEYWORDS_KEY', wordScoreLst
     tmpDct = {}
-    for idx, word in enumerate(wordLst):
-        tmpDct[idx] = word
+    for word, score in wordScoreLst:
+        tmpDct[word] = score
     redisCli.hmset(ALG_HOT_KEYWORDS_KEY, tmpDct)
     print 'SUCCESS: UPDATE REDIS ALG_HOT_KEYWORDS_KEY'
 
@@ -311,7 +315,7 @@ if __name__ == '__main__':
     parser.add_option('-a', '--action', dest='action', default='extract')
     parser.add_option('-t', '--times', dest='delta', default=4)
     parser.add_option('-c', '--count', dest='count', default=20)
-    parser.add_option('-i', '--idx', dest='idx', default=-1)
+    parser.add_option('-r', '--score', dest='newScore', default=-1)
     parser.add_option('-w', '--word', dest='newWord', default='')
     parser.add_option('-s', '--sort', dest='isSorted', default=False)
     (options, args) = parser.parse_args()
@@ -323,8 +327,10 @@ if __name__ == '__main__':
                                  end_date=end_date)
         keywordLst = recentKeywords(newsLst, options.count)
         if options.isSorted == True:
-            keywordLst = sorted(keywordLst, key=lambda d:len(d))
-        dump(keywordLst)
+            #sorted by word length
+            keywordLst = sorted(keywordLst, key=lambda d:len(d[0]))
+        dump(keywordLst, env='online')
+        dump(keywordLst, env='sandbox')
     elif options.action == 'show':
         # show all keywords in redis key
         kwDct = display(options.count)
@@ -333,6 +339,6 @@ if __name__ == '__main__':
             print 'function---dump(kwLst): update all keyword list with a new list'
             print 'function---updateKeyword(idx, newWord): replace keyword at key idx with new word'
         else:
-            updateKeyword(options.idx, options.newWord)
+            updateKeyword(options.newWord, options.newScore)
 
         
