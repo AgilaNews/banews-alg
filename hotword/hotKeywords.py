@@ -41,7 +41,7 @@ MIN_MATCH_PERCENT = '75%'
 
 BLACK_WORD_LST = ['daily inquirer', 'gmanews', 'manila times online',
                   'news portal', 'rappler', 'tmz', 'article originally',
-                  'abs-cbn', 'new roundup']
+                  'abs-cbn', 'news roundup']
 WORD_WRAP_DCT = {
         'nba':'NBA', 
         'i':'I',
@@ -60,8 +60,6 @@ ABBR_WRAP_DCT = {
     'united states': 'US',
     'united kingdom': 'UK',
     'united nations': 'UN',
-    'world health organization':'WHO',
-    'philippine ': 'PH. ',
     }
 
 def getSpanNews(start_date=None, end_date=None):
@@ -192,7 +190,7 @@ def recentKeywords(newsLst, count=10):
     hotTagLst = filterDuplicateNews(hotTagLst, tagNewsDct)
     hotTagLst = filterDuplicateWord(hotTagLst)
     keywordLst =  filter(filterBlackWord, hotTagLst)
-    keywordLt = filterByResult(keywordLst)
+    keywordLst = filterByResult(keywordLst)
     # wrap keyword with proper form
     keywordLst = wrapKeyword(keywordLst)[:count]
     #filter hot query with few search results
@@ -246,10 +244,10 @@ def filterByResult(keywordLst):
                 }
             }
         })
-        if DEBUG: print keyword, result['hits']['total']
         if result['hits']['total']<10:
             continue
         else:
+            if DEBUG: print keyword, result['hits']['total']
             resLst.append((keyword, score))
     return resLst
 
