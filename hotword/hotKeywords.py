@@ -4,6 +4,7 @@ import re
 import sys
 import json
 import math
+import time
 import urllib
 import MySQLdb
 from redis import Redis
@@ -75,7 +76,8 @@ select
     url_sign,
     title,
     json_text,
-    tag
+    tag,
+    publish_time
 from
     tb_news
 where
@@ -84,22 +86,22 @@ where
     )
     and (is_visible = 1)
     and (
-        date(
-            from_unixtime(publish_time)
-        ) BETWEEN '%s' and '%s'
-    )
+            publish_time BETWEEN '%d' and '%d'
+        )
 '''
     if not start_date:
         start_date = date(2015, 1, 1)
     if not end_date:
         end_date = date.today() + timedelta(days=1)
-    startDateStr = start_date.strftime('%Y-%m-%d')
-    endDateStr = end_date.strftime('%Y-%m-%d')
-    cursor.execute(sqlCmd % (startDateStr, endDateStr))
+    startDate = int(time.mktime(start_date.timetuple()))
+    endDate = int(time.mktime(end_date.timetuple()))
+    cursor.execute(sqlCmd % (startDate, endDate))
+    print "fetching news from %d to %d..." %(startDate, endDate)
     newsLst = []
-    for idx, (newsId, title, doc, tags) in \
+    for idx, (newsId, title, doc, tags, publish_time) in \
             enumerate(cursor.fetchall()):
         if idx % 100 == 0:
+            print publish_time
             print 'fetch %s news...' % idx
         newsLst.append((newsId,title.decode('utf-8'), 
                         doc.decode('utf-8'), tags.decode('utf-8')))
@@ -313,7 +315,7 @@ def getActionLog(sc, start_date, end_date):
 if __name__ == '__main__':
     parser = OptionParser()
     parser.add_option('-a', '--action', dest='action', default='extract')
-    parser.add_option('-t', '--times', dest='delta', default=4)
+    parser.add_option('-t', '--times', dest='delta', default=8)
     parser.add_option('-c', '--count', dest='count', default=20)
     parser.add_option('-r', '--score', dest='newScore', default=-1)
     parser.add_option('-w', '--word', dest='newWord', default='')
