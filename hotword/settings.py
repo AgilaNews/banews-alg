@@ -66,7 +66,7 @@ ENVIRONMENT_CONFIG = {
         "redis_crawler_keys": "newsCrawler_item_key",
         "elastic_search_config": {
             "servers": ["http://10.8.18.130:9200", ],
-            "index": "banews-article",
+            "index": "banews",
             "type": "article",
             "buff_length": 500,
             "timeout": 60,

@@ -18,6 +18,7 @@ except:
 import settings
 from rake import Rake
 from optparse import OptionParser
+from elasticsearch import Elasticsearch
 
 DEBUG = True
 
@@ -34,9 +35,13 @@ USER_QUERY = '010132'
 
 ALG_HOT_KEYWORDS_KEY = 'ALG_HOT_KEYWORDS_KEY'
 
+MIN_WORD_LENGTH = 5
+MAX_WORD_LENGTH = 30
+MIN_MATCH_PERCENT = '75%'
+
 BLACK_WORD_LST = ['daily inquirer', 'gmanews', 'manila times online',
                   'news portal', 'rappler', 'tmz', 'article originally',
-                  'abs-cbn',]
+                  'abs-cbn', 'new roundup']
 WORD_WRAP_DCT = {
         'nba':'NBA', 
         'i':'I',
@@ -52,9 +57,10 @@ WORD_WRAP_DCT = {
         }
 ABBR_WRAP_DCT = {
     'president ': '',
-    'united states': 'US.',
-    'united kingdom': 'UK.',
-    'united nation': 'UN',
+    'united states': 'US',
+    'united kingdom': 'UK',
+    'united nations': 'UN',
+    'world health organization':'WHO',
     'philippine ': 'PH. ',
     }
 
@@ -101,7 +107,6 @@ where
     for idx, (newsId, title, doc, tags, publish_time) in \
             enumerate(cursor.fetchall()):
         if idx % 100 == 0:
-            print publish_time
             print 'fetch %s news...' % idx
         newsLst.append((newsId,title.decode('utf-8'), 
                         doc.decode('utf-8'), tags.decode('utf-8')))
@@ -187,11 +192,71 @@ def recentKeywords(newsLst, count=10):
     hotTagLst = filterDuplicateNews(hotTagLst, tagNewsDct)
     hotTagLst = filterDuplicateWord(hotTagLst)
     keywordLst =  filter(filterBlackWord, hotTagLst)
+    keywordLt = filterByResult(keywordLst)
+    # wrap keyword with proper form
     keywordLst = wrapKeyword(keywordLst)[:count]
+    #filter hot query with few search results
     return keywordLst
 
+def filterByResult(keywordLst):
+    env = settings.CURRENT_ENVIRONMENT_TAG
+    envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
+    esCfg = envCfg.get('elastic_search_config', {})
+    es_servers = esCfg['servers']
+    es_timeout = esCfg['timeout']
+    es = Elasticsearch(hosts=es_servers, timeout=es_timeout)
+    resLst = []
+    for keyword, score in keywordLst:
+        result = es.search(
+            index=esCfg['index'],
+            body={
+                "highlight":{"fields":{"title":{}}},
+                "query":{
+                    "function_score":{
+                        "functions":[
+                        {
+                            "gauss":{
+                                "post_timestamp":{
+                                    "offset":"0d",
+                                    "scale":"7d"
+                                    }
+                            }
+                        }
+                    ],
+                    "query":{
+                        "filtered":{
+                            "query":{
+                                "match":{
+                                    "title":{
+                                        "query":keyword,
+                                        "minimum_should_match": MIN_MATCH_PERCENT
+                                    }
+                                }
+                            },
+                            "filter":{
+                                "bool":{
+                                    "must":[
+                                        {"term":{"content_type":0}},
+                                        {"range":{"post_timestamp":{"gte":"now-60d/d"}}}
+                                    ]
+                                }
+                            }                        
+                        }
+                    }
+                }
+            }
+        })
+        if DEBUG: print keyword, result['hits']['total']
+        if result['hits']['total']<10:
+            continue
+        else:
+            resLst.append((keyword, score))
+    return resLst
+
 def filterBlackWord(item):
-    if len(item[0])<5:
+    if len(item[0])<MIN_WORD_LENGTH:
+        return False
+    if len(item[0])>MAX_WORD_LENGTH:
         return False
     if len(item[0].strip().split(' '))>3:
         return False
@@ -315,7 +380,7 @@ def getActionLog(sc, start_date, end_date):
 if __name__ == '__main__':
     parser = OptionParser()
     parser.add_option('-a', '--action', dest='action', default='extract')
-    parser.add_option('-t', '--times', dest='delta', default=8)
+    parser.add_option('-t', '--times', dest='delta', default=12)
     parser.add_option('-c', '--count', dest='count', default=20)
     parser.add_option('-r', '--score', dest='newScore', default=-1)
     parser.add_option('-w', '--word', dest='newWord', default='')
