@@ -173,18 +173,18 @@ def recentKeywords(newsLst, count=10):
                 tagNewsDct[tag] = [newsId,]
             tagScoreDct[tag] = tagScoreDct.get(tag, 0.0) + score
     # fix tagScoreDct with user query log 
-    sc = SparkContext(appName='hotQuery/zhangyaxuan')
-    end_date = date.today()
-    start_date = end_date - timedelta(days=1)
-    logRdd = getActionLog(sc, start_date, end_date)
-    hotQueryLst = sorted(logRdd.collect(), key=lambda d:d[1], reverse=True)
+    #sc = SparkContext(appName='hotQuery/zhangyaxuan')
+    #end_date = date.today()
+    #start_date = end_date - timedelta(days=1)
+    #logRdd = getActionLog(sc, start_date, end_date)
+    #hotQueryLst = sorted(logRdd.collect(), key=lambda d:d[1], reverse=True)
 
-    if DEBUG: print "Hot Query By User:", hotQueryLst[:10]
-    for query, countQuery in hotQueryLst:
-        score = countQuery**0.5 
-        tagScoreDct[tag] = tagScoreDct.get(tag, 0.0) + score
+    #if DEBUG: print "Hot Query By User:", hotQueryLst[:10]
+    #for query, countQuery in hotQueryLst:
+    #    score = countQuery**0.5 
+    #    tagScoreDct[tag] = tagScoreDct.get(tag, 0.0) + score
     hotTagLst = sorted(tagScoreDct.items(), key=lambda d:d[1], reverse=True)
-    if DEBUG: print "hotTagLst after sorted:", hotTagLst[:10]
+    #if DEBUG: print "hotTagLst after sorted:", hotTagLst[:10]
 
     #filter hot query list from same news or having same word
     hotTagLst = filterDuplicateNews(hotTagLst, tagNewsDct)
