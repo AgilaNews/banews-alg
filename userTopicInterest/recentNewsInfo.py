@@ -124,6 +124,8 @@ def calcNewsScore(sc, start_date, end_date, dTopTopicDct):
 
 def dump(scoLst, topicLst, env):
     envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
+    print envCfg
+    print env
     redisCfg = envCfg.get('news_queue_redis_config', {})
     if not redisCfg:
         return None
@@ -163,7 +165,7 @@ if __name__ == '__main__':
     sc = SparkContext(appName='userTopicDis/limeng@agilanews.com')
     dTopTopicDct = sc.broadcast(topTopicDct)
     end_date = date.today() + timedelta(days=1)
-    start_date = end_date - timedelta(days=2)
+    start_date = end_date - timedelta(days=5)
     (newsScoLst, recentTopicLst) = calcNewsScore(sc,
             start_date, end_date, dTopTopicDct)
     # dump model to sandbox & online

@@ -8,6 +8,8 @@ import MySQLdb
 import urllib
 from redis import Redis
 
+import settings
+
 TODAY_LOG_DIR = '/banews/useraction.log-*'
 HISTORY_LOG_DIR = '/banews/useraction'
 LIST_ARTICLE_CLICK = '020103'
@@ -70,12 +72,13 @@ def getTransferTime(timestamp):
     else:
         return None
 
-def getNewsMeta(sc):
-    conn = MySQLdb.connect(host='10.8.22.123',
-                           user='banews_w',
-                           passwd=urllib.quote('MhxzKhl-Happy'),
-                           port=3306,
-                           db='banews')
+def getNewsMeta(sc, envCfgDct):
+    mysqlCfgDct = envCfgDct['mysql_config']
+    conn = MySQLdb.connect(host=mysqlCfgDct['host'],
+                           user=mysqlCfgDct['user'],
+                           passwd=urllib.quote(mysqlCfgDct['passwd']),
+                           port=mysqlCfgDct['port'],
+                           db=mysqlCfgDct['database'])
     conn.autocommit(True)
     cursor = conn.cursor()
     sqlCmd = '''
@@ -96,8 +99,9 @@ WHERE
             lambda (urlSign, chId, fetchTime): (urlSign, (int(chId),
                 getTransferTime(fetchTime)))
         ).filter(
-            lambda (newsId, (chId, fetchTime)): ((NOW - fetchTime).total_seconds() / \
-                    (60 * 60.)) <= (24 * CHANNEL_THRESHOLD_DCT.get(chId, (1, 1))[1])
+            lambda (newsId, (chId, fetchTime)): fetchTime and \
+                    ((NOW - fetchTime).total_seconds() / (60 * 60.)) \
+                    <= (24 * CHANNEL_THRESHOLD_DCT.get(chId, (1, 1))[1])
         )
     return metaRdd
 
@@ -124,8 +128,9 @@ def cleanDirectory():
                 curFileName))
     return None
 
-def calcNewsUV(sc, start_date, end_date):
-    newsMetaRdd = getNewsMeta(sc)
+def calcNewsUV(sc, start_date, end_date, env):
+    envCfgDct = settings.ENVIRONMENT_CONFIG.get(env, {})
+    newsMetaRdd = getNewsMeta(sc, envCfgDct)
     fileLst = getSpanRdd(start_date, end_date)
     uvRdd = sc.textFile(','.join(fileLst)).map(
             lambda dctStr: json.loads(dctStr)
@@ -149,8 +154,9 @@ def calcNewsUV(sc, start_date, end_date):
         ).reduceByKey(
             lambda x, y: x + y
         ).join(newsMetaRdd, 128).cache()
-    redisCli_online = Redis(host='10.8.7.6', port=6379)
-    redisCli_sandbox = Redis(host='10.8.16.33', port=6379)
+    redisCfgDct = envCfgDct['news_queue_redis_config']
+    redisCli = Redis(host=redisCfgDct['host'],
+                     port=redisCfgDct['port'])
     cleanDirectory()
     for curChannelId, (threCnt, threDay) in CHANNEL_THRESHOLD_DCT.items():
         uvNewsLst = uvRdd.filter(
@@ -162,18 +168,17 @@ def calcNewsUV(sc, start_date, end_date):
             ).collect()
         sortedLst = sorted(uvNewsLst, key=lambda val: val[1],
                 reverse=True)[:CURRENT_AVAILABLE_CNT]
-        if redisCli_online.exists(REDIS_POPULAR_NEWS_PREFIX % curChannelId):
-            redisCli_online.delete(REDIS_POPULAR_NEWS_PREFIX % curChannelId)
-        if redisCli_sandbox.exists(REDIS_POPULAR_NEWS_PREFIX % curChannelId):
-            redisCli_sandbox.delete(REDIS_POPULAR_NEWS_PREFIX % curChannelId)
+        if redisCli.exists(REDIS_POPULAR_NEWS_PREFIX % curChannelId):
+            redisCli.delete(REDIS_POPULAR_NEWS_PREFIX % curChannelId)
 
         fileName = os.path.join(TMP_DIR, '%s_%s_SUCCESS.dat' \
                 % (datetime.now().strftime('%Y-%m-%d_%H:%M'), curChannelId))
-        with open(fileName, 'w') as fp:
-            for newsId, cnt in sortedLst:
-                print >>fp, '%s\t%s' % (newsId, int(cnt))
-                redisCli_online.rpush(REDIS_POPULAR_NEWS_PREFIX % curChannelId, newsId)
-                redisCli_sandbox.rpush(REDIS_POPULAR_NEWS_PREFIX % curChannelId, newsId)
+        if env == 'online':
+            with open(fileName, 'w') as fp:
+                for newsId, cnt in sortedLst:
+                    print >>fp, '%s\t%s' % (newsId, int(cnt))
+                    redisCli.rpush(REDIS_POPULAR_NEWS_PREFIX % \
+                            curChannelId, newsId)
 
 def temporaryChannelPush(newsIdLst, channelId):
     redisCli_online = Redis(host='10.8.7.6', port=6379)
@@ -191,7 +196,8 @@ if __name__ == '__main__':
     parser.add_option('-a', '--action', dest='action')
     (options, args) = parser.parse_args()
     if options.action == 'popular':
-        calcNewsUV(sc, start_date, end_date)
+        for env in ['sandbox', 'online']:
+            calcNewsUV(sc, start_date, end_date, env)
     elif options.action == 'temporary':
         TEMP_NEWSID_LST = ['YMIV9IXLfSA=',
                            'fwVmesWbsR8=',
