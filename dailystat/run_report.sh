@@ -11,6 +11,18 @@ PYTHON=/usr/bin/python
 
 statday=`date -d "-1 day"`
 
+if [ $1 == 'useraction' ]; then
+    destinationDirPre='/banews/useraction'
+    originalDirPre='/banews/useraction.log'   
+    localDirPre='/data/prod_stat/useraction'
+elif [ $1 == 'samplefeature' ]; then
+    destinationDirPre='/banews/samplefeature'
+    originalDirPre='/banews/samplefeature/samplefeature.log'
+else
+    echo "parameter should be 'useraction' or 'samplefeature'!"
+    exit 1
+fi
+
 function makeHadoopDir()
 {
     curDate=$1
@@ -18,7 +30,8 @@ function makeHadoopDir()
     year=`date -d "$curDate" +%Y`
     month=`date -d "$curDate" +%m`
     day=`date -d "$curDate" +%d`
-    cmd="$HADOOP fs -mkdir -p /banews/useraction/$year/$month/$day"
+    cmd="$HADOOP fs -mkdir -p \
+        ${destinationDirPre}/$year/$month/$day"
     echo $cmd
     eval $cmd
 }
@@ -29,7 +42,9 @@ function moveFile2HadoopDir()
     year=`date -d "$curDate" +%Y`
     month=`date -d "$curDate" +%m`
     day=`date -d "$curDate" +%d`
-    cmd="$HADOOP fs -mv /banews/useraction.log-$year-$month-$day* /banews/useraction/$year/$month/$day"
+    cmd="$HADOOP fs -mv \
+        ${originalDirPre}-$year-$month-$day* \
+        ${destinationDirPre}/$year/$month/$day"
     echo $cmd
     eval $cmd
 }
@@ -37,23 +52,23 @@ function moveFile2HadoopDir()
 function copyFile2LocalDir()
 {
     curDate=$1
-    outputDir=$2
     year=`date -d "$curDate" +%Y`
     month=`date -d "$curDate" +%m`
     day=`date -d "$curDate" +%d`
-    cmd="$HADOOP fs -getmerge /banews/useraction/$year/$month/$day/* $outputDir"useraction_$year$month$day""
+    cmd="$HADOOP fs -getmerge \
+        ${destinationDirPre}/$year/$month/$day/* \
+        ${localDirPre}_${year}${month}${day}"
     echo $cmd
     eval $cmd
 }
 
 makeHadoopDir "$statday"
 moveFile2HadoopDir "$statday"
-copyFile2LocalDir "$statday" "/data/prod_stat/"
-beginday=`date -d "-1 day" +%Y%m%d`
-endday=`date -d "+1 day $beginday" +%Y%m%d`
-#$PYTHON daily_stat.py $beginday $endday
-sh run.sh daily_stat.py
-sh run.sh install_stat.py
-sh run.sh channelAnalysis.py 
-sh run.sh video_stat.py 
-sh run.sh install_stat_new.py
+if [ $1 == 'useraction' ]; then
+    copyFile2LocalDir "$statday"
+    sh run.sh daily_stat.py
+    sh run.sh install_stat.py
+    sh run.sh channelAnalysis.py 
+    sh run.sh video_stat.py 
+    sh run.sh install_stat_new.py
+fi
