@@ -1,5 +1,6 @@
 # -*- coding:utf-8 -*-
 import os
+from optparse import OptionParser
 from datetime import date, datetime, timedelta
 import json
 import urllib
@@ -273,16 +274,43 @@ def dump(interestRdd, env):
     redisCli.set(ALG_TOPIC_GRAVITY_KEY, GRAVITY)
 
 if __name__ == '__main__':
+    parser = OptionParser()
+    parser.add_option('-a', '--action', dest='action')
+    parser.add_option('-s', '--start_date', dest='start_date')
+    parser.add_option('-e', '--end_date', dest='end_date')
+    (options, args) = parser.parse_args()
+    action = options.action
+    start_date = datetime.strptime(options.start_date, '%Y%m%d').date()
+    end_date = datetime.strptime(options.end_date, '%Y%m%d').date()
+
     sc = SparkContext(appName='newsTrend/limeng')
-    end_date = date.today()
-    start_date = end_date - timedelta(days=45)
     logRdd = getActionLog(sc, start_date, end_date)
     logRdd = logRdd.cache()
-    # category distribution each week
-    categoryDct = getCategoryWeek(logRdd)
-    bCategoryDct = sc.broadcast(categoryDct)
-    # combine user's short-term & long-term interest
-    interestRdd = getUserInterest(logRdd, bCategoryDct)
-    dump(interestRdd, 'sandbox')
-    dump(interestRdd, 'online')
+    if action == 'user_interest':
+        # category distribution each week
+        categoryDct = getCategoryWeek(logRdd)
+        bCategoryDct = sc.broadcast(categoryDct)
+        # combine user's short-term & long-term interest
+        interestRdd = getUserInterest(logRdd, bCategoryDct)
+        dump(interestRdd, 'sandbox')
+        dump(interestRdd, 'online')
+    elif action == 'debug':
+        userIdLst = ['6slQhU9/1Z7XqnzpN8ZSng==', ]
+        logRdd = logRdd.filter(
+                    lambda (userId, topicIdx, newsId, eventId, timestamp): \
+                            (eventId == ARTICLE_CLICK) and \
+                            (userId in userIdLst)
+                ).map(
+                    lambda (userId, topicIdx, newsId, eventId, timestamp): \
+                            (userId, (newsId, topicIdx, eventId, timestamp))
+                ).groupByKey().mapValues(
+                    lambda newsLst: sorted(newsLst, key=lambda val:val[-1],
+                        reverse=True)
+                )
+        userNewsLst = logRdd.collect()
+        for userId, newsLst in userNewsLst:
+            print 'UserId:', userId
+            for newsId, topicIdx, eventId, timestamp in newsLst:
+                print '\tnewsId:%s, topic:%s, event:%s, date:%s' % \
+                        (newsId, topicIdx, eventId, timestamp)
 

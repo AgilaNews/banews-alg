@@ -25,6 +25,8 @@ if [ $1 = "user_interest" ]; then
     $PYTHON_BIN trainTopicModel.py -a predict_offline -s $start_date \
         -e $end_date > user_interest.log 2>&1
     echo "user interest calculation..."
+    end_date=`date -d '0 days' +%Y%m%d`
+    start_date=`date -d '-30 days' +%Y%m%d`
     /home/work/spark-1.6.2-bin-ba/bin/spark-submit \
         --master yarn-client --executor-memory 1G \
         --num-executors 10 --executor-cores 4 \
@@ -32,7 +34,8 @@ if [ $1 = "user_interest" ]; then
         --conf spark.shuffle.manager=SORT \
         --conf spark.yarn.executor.memoryOverhead=4096 \
         --conf spark.yarn.driver.memoryOverhead=4096 \
-        calUserInterest.py >> user_interest.log 2>&1
+        calUserInterest.py -a user_interest -s $start_date \
+        -e $end_date >> user_interest.log 2>&1
 fi
 
 # calcualte recent topic click distribution, 
