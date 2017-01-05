@@ -171,7 +171,10 @@ def calculateSco(favoriteCnt, retweetCnt, createdTime):
         span = 0
     else:
         span = (NOW - createdTime).total_seconds() / 3600
-    score *= pow(0.5, span)
+    if span < 48:
+        score *= pow(0.5, span)
+    else:
+        score = -1
     return score
 
 def parsePage(screenName, statusId):
@@ -245,6 +248,8 @@ def getUserTweets(media, api, spiderName, screenName, count=50):
                     alreadyNewsSet.add(urlSign)
                     score = calculateSco(favoriteCnt, retweetCnt,
                             createdTime)
+                    if score < 0:
+                        continue
                     newsScoLst.append((urlSign, cleUrl, score))
     return newsScoLst
 
