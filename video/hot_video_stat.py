@@ -172,7 +172,7 @@ def update_video_hot_queue(hotvideo, channelId, redisCli):
     hotkey = REDIS_POPULAR_NEWS_PREFIX % channelId
     if redisCli.exists(hotkey):
         redisCli.delete(hotkey)
-    for nid, url, rate, show, click in hotvideo[0:100]:
+    for nid, url, rate, show, click in hotvideo[0:200]:
         redisCli.rpush(hotkey, nid)
 
 

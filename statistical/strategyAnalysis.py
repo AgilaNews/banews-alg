@@ -6,11 +6,8 @@ from datetime import date, datetime, timedelta
 
 TODAY_LOG_DIR = '/banews/useraction.log-%s_*'
 HISTORY_LOG_DIR = '/banews/useraction'
-
-AVAILABLE_STRATEGY_LST = ['10001_popularRanking',
-                          '10001_personalTopicRec',
-                          '10001_lrRanker']
 AVAILABLE_CHANNEL_LST = ['10001', ]
+EXPERIMENT_NAME = 'channel_10001_strategy'
 LIST_REQUEST_CODE = '020104'
 LIST_ARTICLE_REQUEST_CODE = '020102'
 AVAILABLE_EVENTID_LST = [LIST_REQUEST_CODE, LIST_ARTICLE_REQUEST_CODE]
@@ -46,6 +43,15 @@ def getTransferTime(timestamp):
     else:
         return None
 
+def getPolicy(attrDct):
+    if 'abflag' in attrDct:
+        abFlagVal = attrDct['abflag']
+        if type(abFlagVal) == str:
+            abFlagVal = json.loads(abFlagVal)
+        if type(abFlagVal) == dict:
+            return abFlagVal.get(EXPERIMENT_NAME, None)
+    return None
+
 def calcCliDisRatio(sc, start_date, end_date):
     fileLst = getSpanFileLst(start_date, end_date)
     originalRdd = sc.textFile(','.join(fileLst)).map(
@@ -56,7 +62,7 @@ def calcCliDisRatio(sc, start_date, end_date):
                              attrDct.get('news_id'),
                              attrDct.get('news'),
                              attrDct.get('dispatch_id'),
-                             attrDct.get('policy'),
+                             getPolicy(attrDct),
                              attrDct.get('channel_id'),
                              getTransferTime(attrDct.get('time')))
         ).filter(

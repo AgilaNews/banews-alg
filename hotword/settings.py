@@ -5,8 +5,8 @@ import socket
 # mysql, redis & es configuration of local, sandbox & online environment
 HOSTNAME = socket.gethostname()
 RD_HOSTNAME_LST = ['banews', ]
-SANDBOX_HOSTNAME_LST = ['sandbox-1', 'hadoop-1']
-ONLINE_HOSTNAME_LST = ['spider-1']
+SANDBOX_HOSTNAME_LST = ['sandbox-1', ]
+ONLINE_HOSTNAME_LST = ['spider-1', 'hadoop-1']
 if HOSTNAME in RD_HOSTNAME_LST:
     CURRENT_ENVIRONMENT_TAG = 'local'
 elif HOSTNAME in SANDBOX_HOSTNAME_LST:
@@ -17,6 +17,9 @@ else:
     CURRENT_ENVIRONMENT_TAG = None
     print "Spider doesn't deploy on local, sandbox or online machine, Error!!!"
     exit(0)
+
+CURRENT_ENVIRONMENT_TAG = 'online'
+
 ENVIRONMENT_CONFIG = {
     "local": {
         "mysql_config": {
@@ -63,7 +66,7 @@ ENVIRONMENT_CONFIG = {
         "redis_crawler_keys": "newsCrawler_item_key",
         "elastic_search_config": {
             "servers": ["http://10.8.18.130:9200", ],
-            "index": "banews-article",
+            "index": "banews",
             "type": "article",
             "buff_length": 500,
             "timeout": 60,
