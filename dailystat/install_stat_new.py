@@ -265,6 +265,31 @@ def update_daily_info(cur_day, newuser):
             msg = "day %s stat info is already in database"%(cur_day)
             print msg
 
+def update_product_stat(cur_day):
+    cursor = conn.cursor()
+    datenum = cur_day.strftime('%Y%m%d')
+    sqltmp = "select count(*) from tb_all_install_user where datenum=%s and device_type=%s";
+    androiddata = (datenum, "android")
+    cursor.execute(sqltmp, androiddata)
+    res = cursor.fetchone()
+    andorid_count = 0
+    if res:
+        andorid_count = res[0]
+
+    iosdata = (datenum, "ios")
+    cursor.execute(sqltmp, iosdata)
+    res = cursor.fetchone()
+    ios_count = 0
+    if res:
+        ios_count = res[0]
+    all_count = ios_count + andorid_count
+    print ios_count, andorid_count, all_count
+    updatesql = "update tb_daily_report set install=%s where utm_source=%s and datenum=%s"
+    cursor.execute(updatesql, (andorid_count, "android", datenum))
+    cursor.execute(updatesql, (ios_count, "ios", datenum))
+    cursor.execute(updatesql, (all_count, "all", datenum))
+
+
 def update_revisit_info(cur_day, revisit_stat):
     cursor = conn.cursor()
     selectcmd = '''select id, history_ratio from tb_install_user_daily_report WHERE utm_source=%s and utm_medium=%s 
@@ -303,13 +328,13 @@ if __name__ == '__main__':
     end_day = datetime(now.year, now.month, now.day)
     start_day = end_day - timedelta(days=1)
     #start_day = FIRST_ONLINE_DAY
-    #start_day = datetime(2016, 10, 26)
     #end_day = datetime(now.year, now.month, now.day)
     cur_day = start_day
     while cur_day < end_day:
         print cur_day
         newuser = getDailyNewUser(cur_day) 
         update_daily_info(cur_day, newuser)
+        update_product_stat(cur_day)
         stat = calRevistRate(cur_day, span=90)
         update_revisit_info(cur_day, stat)
         cur_day += timedelta(days=1)
