@@ -119,6 +119,8 @@ def calcSco(eventId, timestamp):
 def cleanDirectory():
     today = date.today()
     for curFileName in os.listdir(TMP_DIR):
+        if curFileName.startswith('.'):
+            continue
         vals = curFileName.strip().split('_', 1)
         if len(vals) != 2:
             continue
