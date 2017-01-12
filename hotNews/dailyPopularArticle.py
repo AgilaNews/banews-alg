@@ -85,7 +85,7 @@ def getNewsMeta(sc, envCfgDct):
 SELECT
   `url_sign`,
   `channel_id`,
-  `fetch_time`
+  `publish_time`
 FROM
   `tb_news`
 WHERE
@@ -96,17 +96,17 @@ WHERE
     cursor.execute(sqlCmd)
     resLst = cursor.fetchall()
     metaRdd = sc.parallelize(resLst, 64).map(
-            lambda (urlSign, chId, fetchTime): (urlSign, (int(chId),
-                getTransferTime(fetchTime)))
+            lambda (urlSign, chId, publishTime): (urlSign, (int(chId),
+                getTransferTime(publishTime)))
         ).filter(
-            lambda (newsId, (chId, fetchTime)): fetchTime and \
-                    ((NOW - fetchTime).total_seconds() / (60 * 60.)) \
+            lambda (newsId, (chId, publishTime)): publishTime and \
+                    ((NOW - publishTime).total_seconds() / (60 * 60.)) \
                     <= (24 * CHANNEL_THRESHOLD_DCT.get(chId, (1, 1))[1])
         )
     return metaRdd
 
-def calcSco(eventId, fetchTimeStamp):
-    span = (NOW - fetchTimeStamp).total_seconds() / (60 * 60.)
+def calcSco(eventId, timestamp):
+    span = (NOW - timestamp).total_seconds() / (60 * 60.)
     if eventId == ARTICLE_LIKE:
         sco = 3.
     elif eventId == ARTICLE_COMMENT:
@@ -160,11 +160,11 @@ def calcNewsUV(sc, start_date, end_date, env):
     cleanDirectory()
     for curChannelId, (threCnt, threDay) in CHANNEL_THRESHOLD_DCT.items():
         uvNewsLst = uvRdd.filter(
-                lambda (newsId, (cnt, (chId, fetchTime))): \
+                lambda (newsId, (cnt, (chId, publishTime))): \
                         (True if (curChannelId == 10001) else \
                         (int(chId) == curChannelId)) and (cnt >= threCnt)
             ).mapValues(
-                lambda (cnt, (chId, fetchTime)): cnt
+                lambda (cnt, (chId, publishTime)): cnt
             ).collect()
         sortedLst = sorted(uvNewsLst, key=lambda val: val[1],
                 reverse=True)[:CURRENT_AVAILABLE_CNT]
@@ -182,7 +182,7 @@ def calcNewsUV(sc, start_date, end_date, env):
 
 def temporaryChannelPush(newsIdLst, channelId):
     redisCli_online = Redis(host='10.8.7.6', port=6379)
-    redisCli_sandbox = Redis(host='10.8.16.33', port=6379)
+    redisCli_sandbox = Redis(host='10.8.14.136', port=6379)
     for idx, newsId in enumerate(newsIdLst):
         print '%s. insert newsId:%s' % (idx, newsId)
         redisCli_online.lpush(REDIS_POPULAR_NEWS_PREFIX % channelId, newsId)
