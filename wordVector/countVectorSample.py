@@ -9,10 +9,14 @@ import urllib
 import MySQLdb
 from redis import Redis
 import settings
+from spacy.en import English
+from spacy.parts_of_speech import (NOUN, ADJ, NAMES)
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 MAX_COUNT_FEATURES = 50000
 WORD_IDF_PATH = '/data/models/idf.d'
+VALID_POS_LST = [NOUN, ADJ, NAMES]
+nlp = English()
 
 reload(sys)
 sys.setdefaultencoding("utf-8")
@@ -62,8 +66,23 @@ where
         if idx % 100 == 0:
             print 'fetch %s news...' % idx
         textStr = titleStr + ' ' + stripTag(docStr)
-        newsDocLst.append(textStr.decode('utf-8'))
+        stemmedWordLst = []
+        for token in nlp(textStr.decode('utf-8')):
+            if token.pos not in VALID_POS_LST:
+                continue
+            stemmedWordLst.append(token.lemma_)
+        stemmedDocStr = " ".join(stemmedWordLst)
+        newsDocLst.append(stemmedDocStr)
     return newsDocLst
+
+def stemDoc(newsDoc):
+    stemmedDocLst = []
+    for token in newsDoc:
+        if token.pos not in VALID_POS_LST:
+            continue
+        stemmedDocLst.append(token.lemma_)
+    stemmedDocStr = ' '.join(stemmedDocLst)
+    return stemmedDocStr
 
 def stripTag(htmlStr):
     reg = re.compile(r'<[^>]+>', re.S)
@@ -77,7 +96,7 @@ def dump(idfLst):
 
 if __name__ == '__main__':
     end_date = date.today() + timedelta(days=1)
-    start_date = date.today() - timedelta(days=20)
+    start_date = date.today() - timedelta(days=30)
     newsDocLst = getSpanNews(start_date=start_date,
                              end_date=end_date)
     tfidf_vector = TfidfVectorizer(max_df=0.95, min_df=2,
