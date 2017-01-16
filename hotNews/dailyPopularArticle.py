@@ -119,6 +119,8 @@ def calcSco(eventId, timestamp):
 def cleanDirectory():
     today = date.today()
     for curFileName in os.listdir(TMP_DIR):
+        if curFileName.startswith('.'):
+            continue
         vals = curFileName.strip().split('_', 1)
         if len(vals) != 2:
             continue
@@ -173,12 +175,13 @@ def calcNewsUV(sc, start_date, end_date, env):
 
         fileName = os.path.join(TMP_DIR, '%s_%s_SUCCESS.dat' \
                 % (datetime.now().strftime('%Y-%m-%d_%H:%M'), curChannelId))
+        for newsId, cnt in sortedLst:
+            redisCli.rpush(REDIS_POPULAR_NEWS_PREFIX % \
+                        curChannelId, newsId)
         if env == 'online':
             with open(fileName, 'w') as fp:
                 for newsId, cnt in sortedLst:
                     print >>fp, '%s\t%s' % (newsId, int(cnt))
-                    redisCli.rpush(REDIS_POPULAR_NEWS_PREFIX % \
-                            curChannelId, newsId)
 
 def temporaryChannelPush(newsIdLst, channelId):
     redisCli_online = Redis(host='10.8.7.6', port=6379)
