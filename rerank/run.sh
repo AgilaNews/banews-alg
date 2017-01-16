@@ -10,14 +10,14 @@ SCALE_FILE=$DATA_DIR/'sample.dat.scale'
 MODEL_FILE=$DATA_DIR/'liblinear.model'
 today=`date +%Y%m%d`
 end_date=`date -d '1 days' +%Y%m%d`
-start_date=`date -d '-8 days' +%Y%m%d`
+start_date=`date -d '-14 days' +%Y%m%d`
 debug=false
 PYTHON=/usr/bin/python2.7
 
 if [ $1 = "sample" ]; then
-    topic_start_date=`date -d '-15 days' +%Y%m%d`
-    $PYTHON /home/work/banews-alg/userTopicInterest/trainTopicModel.py \
-        -a predict_offline -e $end_date -s $topic_start_date 
+    #topic_start_date=`date -d '-15 days' +%Y%m%d`
+    #$PYTHON /home/work/banews-alg/userTopicInterest/trainTopicModel.py \
+    #    -a predict_offline -e $end_date -s $topic_start_date 
     # negative sample ratio: 6000000 / 32717667. = 0.183
     # positive sample ratio: 1500000 / 1918506. = 0.782
     echo "sampling trainning data..."
@@ -56,6 +56,7 @@ fi
 
 #cost=0.015625
 cost=1
+#cost=0.00390625
 if [ $1 = "crossValidation" ]; then
     $LIBLINEAR_EXE $svm_params -v 5 -c $cost $SCALE_FILE 
 fi
@@ -64,12 +65,12 @@ if [ $1 = "train" ]; then
     $LIBLINEAR_EXE $svm_params -c $cost $SCALE_FILE $MODEL_FILE
     if [ "$debug" = true ]; then
         sandbox="10.8.6.7"
-        echo 'scp to sandbox@${sandbox}'
+        echo 'scp to sandbox@'${sandbox}
         scp -r /data/models/liblinear root@$sandbox:/data/models/
         ssh root@$sandbox "chown -R work:work /data/models/liblinear"
     else
         comment="10.8.91.237"
-        echo 'scp to comment@${comment}'
+        echo 'scp to comment@'${comment}
         scp -r /data/models/liblinear root@$comment:/data/models/
         ssh root@$comment "chown -R work:work /data/models/liblinear"
     fi
