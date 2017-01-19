@@ -18,6 +18,7 @@ VIDEO_DISPATCH_ACTION = set(['020104'])
 VIDEO_PLAY_ACTION = set(['020301','020102'])
 
 REDIS_POPULAR_NEWS_PREFIX = 'BA_POPULAR_NEWS_%s'
+REDIS_MANUAL_POPULAR_NEWS_PREFIX = 'BA_MANUAL_POPULAR_NEWS_%s'
 
 def line_tran(line):
     try:
@@ -172,8 +173,13 @@ def update_video_hot_queue(hotvideo, channelId, redisCli):
     hotkey = REDIS_POPULAR_NEWS_PREFIX % channelId
     if redisCli.exists(hotkey):
         redisCli.delete(hotkey)
+    manual_hotkey = REDIS_MANUAL_POPULAR_NEWS_PREFIX % channelId
+    manual_news = redisCli.lrange(manual_hotkey, 0, -1)
     for nid, url, rate, show, click in hotvideo[0:200]:
-        redisCli.rpush(hotkey, nid)
+        if nid not in manual_news:
+            redisCli.rpush(hotkey, nid)
+    for nid in manual_news:
+        redisCli.push(hotkey, nid)
 
 
 if __name__ == '__main__':
