@@ -179,7 +179,7 @@ def update_video_hot_queue(hotvideo, channelId, redisCli):
         if nid not in manual_news:
             redisCli.rpush(hotkey, nid)
     for nid in manual_news:
-        redisCli.push(hotkey, nid)
+        redisCli.lpush(hotkey, nid)
 
 
 if __name__ == '__main__':
