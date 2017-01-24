@@ -84,6 +84,10 @@ def source_extract(line):
             utm_campaign = refer_info.get("utm_campaign", "")
             utm_campaign = utm_campaign.lower()
 
+            #trick for wrong package name for oppo_offline_cedu (the right pacakage should be oppo_offline_cebu)
+            if utm_campaign == "cedu":
+                utm_campaign = "cebu"
+
             utm_source = (utm_source, utm_medium, utm_campaign)
         except:
             traceback.print_exc()
