@@ -7,38 +7,44 @@ from datetime import date, datetime, timedelta
 from random import random
 import json
 from optparse import OptionParser
-import MySQLdb
-from redis import Redis
-import urllib
 
 from pyspark import SparkContext
-import settings
 
 KDIR = os.path.dirname(os.path.abspath(__file__))
-TODAY_LOG_DIR = '/banews/useraction.log-*'
-HISTORY_LOG_DIR = '/banews/useraction'
+ACTION_TODAY_LOG_DIR = '/banews/useraction.log-*'
+ACTION_HISTORY_LOG_DIR = '/banews/useraction'
+FEATURE_TODAY_LOG_DIR = '/banews/samplefeature/samplefeature.log-*'
+FEATURE_HISTORY_LOG_DIR = '/banews/samplefeature'
 HADOOP_BIN = '/home/work/hadoop-2.6.0-cdh5.7.0/bin/hadoop'
 ARTICLE_CLICK_EVENTID = '020103'
 ARTICLE_DISPLAY_EVENTID = '020104'
 ARTICLE_LIKE_EVENTID = '020204'
 ARTICLE_COMMENT_EVENTID = '020207'
-EVENTID_LST = [ARTICLE_CLICK_EVENTID,
-               ARTICLE_DISPLAY_EVENTID,
-               ARTICLE_LIKE_EVENTID,
-               ARTICLE_COMMENT_EVENTID]
+ACTION_WEGITH_DCT = {
+            ARTICLE_CLICK_EVENTID: 1,
+            ARTICLE_LIKE_EVENTID: 3,
+            ARTICLE_COMMENT_EVENTID: 3
+        }
 ROUND_CNT = 5
-HOUR = 60 * 60
-POSITIVE_TAG = 1
-NEGATIVE_TAG = -1
+POSITIVE_TAG = '1'
+NEGATIVE_TAG = '-1'
 FEATURE_MAP_NAME = 'feature_mapping.listPage'
-ALG_NEWS_FEATURE_KEY = 'ALG_NEWS_FEATURE_KEY_V2'
 MIN_FEATURE_VALUE = 0.001
 TOPIC_CNT = 80
 TOPIC_PREFIX_KEY = 'TOPIC_%s'
 TRAINING_DATA_HDFS = '/user/limeng/models/liblinear/trainingData'
 TMP_DATA_PATH = '/data/tmp/alg'
 
-def getSpanFileLst(start_date, end_date, withToday=False):
+def getSpanFileLst(kind, start_date, end_date, withToday=False):
+    if kind == 'useraction':
+        todayLogDir = ACTION_TODAY_LOG_DIR
+        historyLogDir = ACTION_HISTORY_LOG_DIR
+    elif kind == 'samplefeature':
+        todayLogDir = FEATURE_TODAY_LOG_DIR
+        historyLogDir = FEATURE_HISTORY_LOG_DIR
+    else:
+        print 'unkown kind input, error!'
+        exit(1)
     fileLst = []
     if start_date >= end_date:
         return fileLst
@@ -47,9 +53,9 @@ def getSpanFileLst(start_date, end_date, withToday=False):
         withToday = True
     if withToday:
         res = os.popen('%s fs -ls %s' % \
-                (HADOOP_BIN, TODAY_LOG_DIR)).readlines()
+                (HADOOP_BIN, todayLogDir)).readlines()
         if len(res):
-            fileLst.append(TODAY_LOG_DIR)
+            fileLst.append(todayLogDir)
 
     # append history's log
     cur_date = start_date
@@ -57,118 +63,70 @@ def getSpanFileLst(start_date, end_date, withToday=False):
         if cur_date >= date.today():
             cur_date += timedelta(days=1)
             continue
-        curDir = os.path.join(HISTORY_LOG_DIR,
+        curDir = os.path.join(historyLogDir,
                               cur_date.strftime('%Y/%m/%d'),
-                              'useraction.log-*')
+                              '*.log-*')
         res = os.popen("%s fs -ls %s" % (HADOOP_BIN, curDir)).readlines()
         if len(res) != 0:
             fileLst.append(curDir)
         cur_date += timedelta(days=1)
     return fileLst
 
-def getOriginalLog(start_date, end_date, sc):
-    fileLst = getSpanFileLst(start_date, end_date)
-    def _(eventId, did, newsId, newsIdLst, timestamp):
-        if eventId in (ARTICLE_DISPLAY_EVENTID, ):
-            tmpLst = [(eventId, did, curNewsId, timestamp) \
-                    for curNewsId in newsIdLst]
-        else:
-            tmpLst = [(eventId, did, newsId, timestamp), ]
-        return tmpLst
-    logRdd = sc.textFile(','.join(fileLst)).map(
+def getUserActionLog(sc, start_date, end_date):
+    userActFileLst = getSpanFileLst('useraction', start_date, end_date)
+    actionLogRdd = sc.textFile(','.join(userActFileLst)).map(
                 lambda attrStr: json.loads(attrStr)
             ).filter(
-                lambda attrDct: (attrDct.get('event-id') in EVENTID_LST) and \
-                                ('did' in attrDct) and \
-                                ('time' in attrDct)
+                lambda attrDct: ('did' in attrDct) and \
+                                ('session' in attrDct) and \
+                                ('time' in attrDct) and \
+                                (attrDct.get('event-id') in ACTION_WEGITH_DCT)
             ).map(
-                lambda attrDct: (
-                    attrDct['event-id'].encode('utf-8'),
-                    attrDct['did'].encode('utf-8'),
-                    attrDct.get('news_id', u'').encode('utf-8'),
-                    [curNewsId.encode('utf-8') for curNewsId in \
-                            attrDct.get('news',[]) if type(curNewsId)==unicode],
-                    datetime.fromtimestamp(float(attrDct['time'])/1000))
-            ).flatMap(
-                lambda (eventId, did, newsId, newsIdLst, timestamp): \
-                        _(eventId, did, newsId, newsIdLst, timestamp)
-            ).cache()
-    return logRdd
-
-def aggregateFeatures(actRdd):
-    aggFeatureRdd = actRdd.map(
-                lambda (eventId, did, newsId, timestamp): \
-                        (eventId, did, newsId)
-            ).distinct(128).map(
-                lambda (eventId, did, newsId): (newsId,
-                    (1 if (eventId == ARTICLE_DISPLAY_EVENTID) else 0,
-                     1 if (eventId == ARTICLE_CLICK_EVENTID) else 0,
-                     1 if (eventId == ARTICLE_LIKE_EVENTID) else 0,
-                     1 if (eventId == ARTICLE_COMMENT_EVENTID) else 0))
+                lambda attrDct: (attrDct['did'],
+                                 attrDct['session'],
+                                 attrDct['event-id'],
+                                 attrDct['news_id'])
+            ).map(
+                lambda (did, sessionId, eventId, newsId): \
+                        ((did, newsId), ACTION_WEGITH_DCT[eventId])
             ).reduceByKey(
-                lambda x, y: (x[0] + y[0],
-                              x[1] + y[1],
-                              x[2] + y[2],
-                              x[3] + y[3]), 128
-            ).mapValues(
-                lambda (displayCnt, clickCnt, likeCnt, commentCnt): \
-                        (max(displayCnt, clickCnt, likeCnt, commentCnt),
-                         clickCnt, likeCnt, commentCnt)
+                lambda x, y: max(x, y)
+            )
+    return actionLogRdd
+
+def getFeatureLog(sc, start_date, end_date):
+    featureFileLst = getSpanFileLst('samplefeature', start_date, end_date)
+    featureLogRdd = sc.textFile(','.join(featureFileLst)).map(
+                lambda attrStr: json.loads(attrStr)
             ).filter(
-                lambda (newsId, (displayCnt, clickCnt, likeCnt, commentCnt)): \
-                        displayCnt > 0
+                lambda attrDct: ('did' in attrDct) and \
+                                ('news_id' in attrDct) and \
+                                ('session' in attrDct) and \
+                                ('features' in attrDct)
+            ).map(
+                lambda attrDct: (attrDct['did'],
+                                 attrDct['session'],
+                                 attrDct['news_id'],
+                                 attrDct['features'],
+                                 attrDct['time'])
+            ).map(
+                lambda (did, sessionId, newsId, featuresDct, time): \
+                        ((did, newsId), (featuresDct, time))
+            ).reduceByKey(
+                lambda x, y: x if x[1] >= y[1] else y
             ).mapValues(
-                lambda (displayCnt, clickCnt, likeCnt, commentCnt): \
-                        (displayCnt, clickCnt, likeCnt, commentCnt,
-                         round(clickCnt/float(displayCnt), ROUND_CNT),
-                         round(likeCnt/float(displayCnt), ROUND_CNT),
-                         round(commentCnt/float(displayCnt), ROUND_CNT))
+                lambda (featuresDct, time): featuresDct
             )
-    return aggFeatureRdd
+    return featureLogRdd
 
-def getNewsActionFeatures(logRdd):
-    '''
-    TODO: cannot be used until realtime feature dumping works
-    # get recent action detail
-    endTimestamp = datetime.now()
-    startTimestamp = endTimestamp - timedelta(days=1)
-    recentActRdd = logRdd.filter(
-                lambda (eventId, did, newsId, timestamp): \
-                        (timestamp >= startTimestamp) and \
-                        (timestamp <= endTimestamp)
+def maxLabelLog(sc, start_date, end_date):
+    actionLogRdd = getUserActionLog(sc, start_date, end_date)
+    featureLogRdd = getFeatureLog(sc, start_date, end_date)
+    sampleRdd = featureLogRdd.leftOuterJoin(actionLogRdd, 128).map(
+                lambda (key, (featuresDct, weight)): \
+                        (-1 if not weight else weight, featuresDct)
             )
-    recentActFeatureRdd = aggregateFeatures(recentActRdd)
-    '''
-    # get history action detail
-    historyActFeatureRdd = aggregateFeatures(logRdd)
-    return historyActFeatureRdd
-
-def getTitleLen(titleStr):
-    wordLst = titleStr.strip().split()
-    return len(wordLst)
-
-def getContentFeatures(jsonTxt):
-    imagePat = re.compile(r'<!--IMG\d+-->')
-    imageLst = imagePat.findall(jsonTxt)
-    videoPat = re.compile(r'<!--YOUTUBE\d+-->')
-    videoLst = videoPat.findall(jsonTxt)
-    wordLst = jsonTxt.strip().split()
-    return (len(imageLst), len(videoLst), len(wordLst))
-
-def getCursor():
-    env = settings.CURRENT_ENVIRONMENT_TAG
-    envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
-    mysqlCfg = envCfg.get('mysql_config', {})
-    if not mysqlCfg:
-        return None
-    conn = MySQLdb.connect(host=mysqlCfg['host'],
-                           user=mysqlCfg['user'],
-                           passwd=urllib.quote(mysqlCfg['passwd']),
-                           port=mysqlCfg['port'],
-                           db=mysqlCfg['database'])
-    conn.autocommit(True)
-    cursor = conn.cursor()
-    return cursor
+    return sampleRdd
 
 def getNewsTopicFeatures(newsFeatureDct):
     filterNewsFeatureDct = {}
@@ -191,99 +149,6 @@ def getNewsTopicFeatures(newsFeatureDct):
             filterNewsFeatureDct[newsId] = featureLst
     return filterNewsFeatureDct
 
-def getNewsMetaFeatures(start_date=None, end_date=None):
-    cursor = getCursor()
-    sqlCmd = '''
-select
-    url_sign,
-    title,
-    json_text,
-    publish_time,
-    fetch_time
-from
-    tb_news
-where
-    (
-        channel_id not in (10011, 10012, 30001)
-    )
-    and (is_visible = 1)
-    and (
-        date(
-            from_unixtime(publish_time)
-        ) BETWEEN '%s' and '%s'
-    )
-'''
-    if not start_date:
-        start_date = date(2015, 1, 1)
-    if not end_date:
-        end_date = date.today() + timedelta(days=1)
-    startDateStr = start_date.strftime('%Y-%m-%d')
-    endDateStr = end_date.strftime('%Y-%m-%d')
-    cursor.execute(sqlCmd % (startDateStr, endDateStr))
-    newsLst = cursor.fetchall()
-    newsFeatureDct = {}
-    for idx, (newsId, title, jsonTxt, pubTime, fetTime) in \
-            enumerate(newsLst):
-        if idx % 100 == 0:
-            print '%s left...' % (len(newsLst) - idx)
-        titleLen = getTitleLen(title)
-        (imageCnt, videoCnt, contentLen) = getContentFeatures(jsonTxt)
-        pubTime = datetime.fromtimestamp(pubTime)
-        fetTime = datetime.fromtimestamp(fetTime)
-        newsFeatureDct[newsId] = (titleLen, imageCnt, videoCnt,
-                contentLen, pubTime, fetTime)
-    # append news topic distribution
-    newsFeatureDct = getNewsTopicFeatures(newsFeatureDct)
-    return newsFeatureDct
-
-def combineFeatures(logRdd, metaFeatureRdd, isDaily=False):
-    # news action features
-    actFeatureRdd = getNewsActionFeatures(logRdd)
-    def _(actFeatureLst, metaFeatureLst):
-        (displayCnt, clickCnt, likeCnt, commentCnt,
-                clickRat, likeRat, commentRat) = actFeatureLst
-        (titleLen, imageCnt, videoCnt, contentLen, pubTime,
-                fetTime, topicLst) = metaFeatureLst
-        if isDaily:
-            pubTime = int(pubTime.strftime('%s'))
-            fetTime = int(fetTime.strftime('%s'))
-        featureLst = [displayCnt, clickCnt, likeCnt,
-                commentCnt, clickRat, likeRat, commentRat,
-                titleLen, imageCnt, videoCnt, contentLen,
-                pubTime, fetTime, topicLst]
-        return featureLst
-    featureRdd = actFeatureRdd.join(
-                metaFeatureRdd, 128
-            ).mapValues(
-                lambda (actFeatureLst, metaFeatureLst): \
-                        _(actFeatureLst, metaFeatureLst)
-            ).filter(
-                lambda (newsId, featureLst): featureLst
-            )
-    return featureRdd
-
-def getMaxLabelLog(logRdd):
-    def _actMerge(preTup, latTup):
-        preEventId, preTimestamp = preTup
-        latEventId, latTimestamp = latTup
-        if preEventId == latEventId:
-            eventId = preEventId
-        else:
-            eventId = ARTICLE_CLICK_EVENTID
-        timestamp = max(preTimestamp, latTimestamp)
-        return (eventId, timestamp)
-    logRdd = logRdd.map(
-                lambda (eventId, did, newsId, timestamp): \
-                        ((did, newsId), (eventId, timestamp))
-            ).reduceByKey(
-                lambda preTup, latTup: _actMerge(preTup, latTup), 256
-            ).mapValues(
-                lambda (eventId, timestamp): (ARTICLE_DISPLAY_EVENTID \
-                        if str(eventId)==ARTICLE_DISPLAY_EVENTID else \
-                        ARTICLE_CLICK_EVENTID, timestamp)
-            )
-    return logRdd
-
 def loadFeatureMap(featureFile):
     if not hasattr(loadFeatureMap, 'featureNameLst'):
         featureNameLst = []
@@ -296,105 +161,85 @@ def loadFeatureMap(featureFile):
         loadFeatureMap.featureNameLst = featureNameLst
     return loadFeatureMap.featureNameLst
 
-def setMetaFeature(featureDct, metaFeatureLst, timestamp):
-    (imageCnt, videoCnt, titleLen, contentLen, pubTime,
-            fetTime) = metaFeatureLst
-    fetTimeInterval = (timestamp - fetTime).total_seconds()
-    fetTimeInterval /= HOUR
-    if fetTimeInterval <= 0:
-        fetTimeInterval = MIN_FEATURE_VALUE
-    pubTimeInterval = (timestamp - pubTime).total_seconds()
-    pubTimeInterval /= HOUR
-    if pubTimeInterval <= 0:
-        pubTimeInterval = MIN_FEATURE_VALUE
-    featureDct['PICTURE_COUNT'] = imageCnt
-    featureDct['VIDEO_COUNT'] = videoCnt
-    featureDct['TITLE_LENGTH'] = titleLen
-    featureDct['CONTENT_LENGTH'] = contentLen
-    featureDct['FETCH_TIMESTAMP_INTERVAL'] = fetTimeInterval
-    featureDct['POST_TIMESTAMP_INTERTVAL'] = pubTimeInterval
-    return featureDct
+def setMetaFeature(featuresDct, formatedFeaturesDct):
+    formatedFeaturesDct['PICTURE_COUNT'] = \
+            featuresDct.get('PICTURE_COUNT', MIN_FEATURE_VALUE)
+    formatedFeaturesDct['VIDEO_COUNT'] = \
+            featuresDct.get('VIDEO_COUNT', MIN_FEATURE_VALUE)
+    formatedFeaturesDct['TITLE_LENGTH'] = \
+            featuresDct.get('TITLE_LENGTH', MIN_FEATURE_VALUE)
+    formatedFeaturesDct['CONTENT_LENGTH'] = \
+            featuresDct.get('CONTENT_LENGTH', MIN_FEATURE_VALUE)
+    formatedFeaturesDct['FETCH_TIMESTAMP_INTERVAL'] = \
+            featuresDct.get('FETCH_TIMESTAMP_INTERVAL', MIN_FEATURE_VALUE)
+    formatedFeaturesDct['POST_TIMESTAMP_INTERTVAL'] = \
+            featuresDct.get('POST_TIMESTAMP_INTERTVAL', MIN_FEATURE_VALUE)
+    return formatedFeaturesDct
 
-def setActionFeature(featureDct, actFeatureLst):
-    (displayCnt, clickCnt, likeCnt, commentCnt,
-            clickRat, likeRat, commentRat) = actFeatureLst
-    featureDct['HISTORY_DISPLAY_COUNT'] = displayCnt
-    featureDct['HISTORY_READ_COUNT'] = clickCnt
-    featureDct['HISTORY_LIKE_COUNT'] = likeCnt
-    featureDct['HISTORY_COMMENT_COUNT'] = commentCnt
-    featureDct['HISTORY_READ_DISPLAY_RATIO'] = clickRat
-    featureDct['HISTORY_LIKE_DISPLAY_RATIO'] = likeRat
-    featureDct['HISTORY_COMMENT_DISPLAY_RATIO'] = commentRat
-    return featureDct
+def setActionFeature(featuresDct, formatedFeaturesDct):
+    formatedFeaturesDct['HISTORY_DISPLAY_COUNT'] = \
+            featuresDct.get('HISTORY_DISPLAY_COUNT', MIN_FEATURE_VALUE)
+    formatedFeaturesDct['HISTORY_READ_COUNT'] = \
+            featuresDct.get('HISTORY_READ_COUNT', MIN_FEATURE_VALUE)
+    formatedFeaturesDct['HISTORY_LIKE_COUNT'] = \
+            featuresDct.get('HISTORY_LIKE_COUNT', MIN_FEATURE_VALUE)
+    formatedFeaturesDct['HISTORY_COMMENT_COUNT'] = \
+            featuresDct.get('HISTORY_COMMENT_COUNT', MIN_FEATURE_VALUE)
+    formatedFeaturesDct['HISTORY_READ_DISPLAY_RATIO'] = \
+            min(1., float(featuresDct.get('HISTORY_READ_DISPLAY_RATIO',
+            MIN_FEATURE_VALUE)))
+    formatedFeaturesDct['HISTORY_LIKE_DISPLAY_RATIO'] = \
+            min(1., float(featuresDct.get('HISTORY_LIKE_DISPLAY_RATIO',
+            MIN_FEATURE_VALUE)))
+    formatedFeaturesDct['HISTORY_COMMENT_DISPLAY_RATIO'] = \
+            min(1., float(featuresDct.get('HISTORY_COMMENT_DISPLAY_RATIO',
+            MIN_FEATURE_VALUE)))
+    return formatedFeaturesDct
 
-def setTopicFeature(featureDct, topicLst):
-    if len(topicLst) != TOPIC_CNT:
-        print 'Topic length incorrect, Error!'
-        exit(1)
-    for idx, topicVal in enumerate(topicLst):
-        key = TOPIC_PREFIX_KEY % idx
-        featureDct[key] = topicVal
-    return featureDct
-
-def getSampleLog(maxLabelLogRdd, featureRdd):
+def formatSampleFeatures(sampleFeatureRdd):
     featureMapPath = os.path.join(KDIR, FEATURE_MAP_NAME)
     featureNameLst = loadFeatureMap(featureMapPath)
-    def _(did, eventId, timestamp, featureLst):
-        (displayCnt, clickCnt, likeCnt, commentCnt,
-                clickRat, likeRat, commentRat, titleLen,
-                imageCnt, videoCnt, contentLen, pubTime,
-                fetTime, topicLst) = featureLst
-        featureDct = {}
+    def _(featuresDct):
+        formatedFeaturesDct = {}
         # extract news meta features
-        metaFeatureLst = [imageCnt, videoCnt, titleLen, contentLen,
-                pubTime, fetTime]
-        setMetaFeature(featureDct, metaFeatureLst, timestamp)
+        setMetaFeature(featuresDct, formatedFeaturesDct)
         # extract news action features
-        actFeatureLst = [displayCnt, clickCnt, likeCnt, commentCnt,
-                clickRat, likeRat, commentRat]
-        setActionFeature(featureDct, actFeatureLst)
-        # extract news topic features
-        setTopicFeature(featureDct, topicLst)
-        if eventId == ARTICLE_DISPLAY_EVENTID:
-            label = NEGATIVE_TAG
-        else:
-            label = POSITIVE_TAG
+        setActionFeature(featuresDct, formatedFeaturesDct)
         # label samples
-        valueLst = [str(label), ]
+        valueLst = []
+        featureIdxLst = []
         for idx, curFeatureName in enumerate(featureNameLst):
-            value = round(featureDct.get(curFeatureName, 0),
-                    ROUND_CNT)
-            if value:
-                valueLst.append('%s:%s' % (idx+1, value))
-        return valueLst
-    sampleRdd = maxLabelLogRdd.join(featureRdd, 128).mapValues(
-                lambda ((did, eventId, timestamp), featureLst): \
-                        _(did, eventId, timestamp, featureLst)
-            ).map(
-                lambda (newsId, valsLst): valsLst
-            )
-    return sampleRdd
+            featureVal = formatedFeaturesDct.get(curFeatureName, 0)
+            if type(featureVal) != float:
+                featureVal = float(featureVal)
+            featureVal = round(featureVal, ROUND_CNT)
+            if featureVal:
+                featureIdxLst.append('%s:%s' % (idx+1, featureVal))
+        return featureIdxLst
+    sampleFeatureRdd = sampleFeatureRdd.mapValues(
+                lambda featuresDctStr: json.loads(featuresDctStr)
+            ).mapValues(_)
+    return sampleFeatureRdd
 
-def sample(sampleRdd, posRatio, negRatio):
-    def _(valsLst):
-        tag = int(valsLst[0])
-        if tag == POSITIVE_TAG:
+def quotaSample(sampleRdd, posRatio, negRatio):
+    def _(weight, featureIdxLst):
+        if weight > 0:
             if random() <= posRatio:
-                return valsLst
+                return [POSITIVE_TAG, ] + featureIdxLst
             else:
                 return None
-        elif tag == NEGATIVE_TAG:
+        else:
             if random() <= negRatio:
-                return valsLst
+                return [NEGATIVE_TAG, ] + featureIdxLst
             else:
                 return None
     os.popen('%s fs -rm -r %s' % (HADOOP_BIN, TRAINING_DATA_HDFS))
     sampleRdd = sampleRdd.map(
-                lambda valsLst: _(valsLst)
+                lambda (weight, featureIdxLst): _(weight, featureIdxLst)
             ).filter(
-                lambda valsLst: valsLst
+                lambda sampleFeatureLst: sampleFeatureLst
             ).map(
-                lambda valsLst: ' '.join(valsLst)
+                lambda sampleFeatureLst: ' '.join(sampleFeatureLst)
             ).saveAsTextFile(TRAINING_DATA_HDFS)
     baseName = os.path.basename(TRAINING_DATA_HDFS)
     os.popen('rm -rf %s' % os.path.join(TMP_DATA_PATH, baseName))
@@ -402,16 +247,6 @@ def sample(sampleRdd, posRatio, negRatio):
         TMP_DATA_PATH))
     os.popen('cat %s/* > %s' % (os.path.join(TMP_DATA_PATH, baseName),
         SAMPLE_FILENAME))
-
-def featureExp(featureLst):
-    resLst = []
-    for feature in featureLst:
-        if type(feature) not in (list, tuple):
-            resLst.append(feature)
-        else:
-            resLst.extend(list(feature))
-    resLst = map(lambda val: round(val, ROUND_CNT), resLst)
-    return resLst
 
 if __name__ == '__main__':
     sc = SparkContext(appName='rerank/limeng@agilanews.com',
@@ -427,7 +262,7 @@ if __name__ == '__main__':
 
     start_date = datetime.strptime(options.start_date, '%Y%m%d').date()
     end_date = datetime.strptime(options.end_date, '%Y%m%d').date()
-    logRdd = getOriginalLog(start_date, end_date, sc)
+    sampleFeatureRdd = maxLabelLog(sc, start_date, end_date)
     global DATA_DIR
     global SAMPLE_FILENAME
     if not options.dataDir:
@@ -435,11 +270,9 @@ if __name__ == '__main__':
         exit(0)
     DATA_DIR = options.dataDir
     SAMPLE_FILENAME = os.path.join(DATA_DIR, 'sample.dat')
-    maxLabelLogRdd = getMaxLabelLog(logRdd)
     if options.action == 'verbose':
-        categoryRdd = maxLabelLogRdd.map(
-                    lambda ((did, newsId), (eventId, timestamp)): \
-                            (eventId, 1)
+        categoryRdd = sampleFeatureRdd.map(
+                    lambda (weight, featuresDct): (weight, 1)
                 ).reduceByKey(
                     lambda x, y: x + y, 64
                 )
@@ -449,49 +282,7 @@ if __name__ == '__main__':
             print '%s. eventId:%s, cnt:%s' % (idx, category, cnt)
         print '=' * 60
     elif options.action == 'sample':
-        # news meta features
-        news_start_date = start_date - timedelta(days=6)
-        metaFeatureDct = getNewsMetaFeatures(
-                start_date=news_start_date, end_date=end_date)
-        metaFeatureRdd = sc.parallelize(metaFeatureDct.items())
-        featureRdd = combineFeatures(logRdd, metaFeatureRdd)
-        maxLabelLogRdd = maxLabelLogRdd.map(
-                lambda ((did, newsId), (eventId, timestamp)): \
-                        (newsId, (did, eventId, timestamp))
-            )
-        sampleRdd = getSampleLog(maxLabelLogRdd, featureRdd)
+        sampleRdd = formatSampleFeatures(sampleFeatureRdd)
         clickRatio = float(options.clickRatio)
         displayRatio = float(options.displayRatio)
-        sample(sampleRdd, clickRatio, displayRatio)
-    elif options.action == 'daily':
-        end_date = date.today() + timedelta(days=1)
-        start_date = end_date - timedelta(days=5)
-        metaFeatureDct = getNewsMetaFeatures(
-                start_date=start_date, end_date=end_date)
-        metaFeatureRdd = sc.parallelize(metaFeatureDct.items())
-        featureRdd = combineFeatures(
-                    logRdd, metaFeatureRdd, isDaily=True
-                ).mapValues(
-                    lambda featureLst: featureExp(featureLst)
-                )
-        newsFeatureLst = featureRdd.collect()
-        env = settings.CURRENT_ENVIRONMENT_TAG
-        envCfg = settings.ENVIRONMENT_CONFIG.get(env, {})
-        redisCfg = envCfg.get('news_queue_redis_config', {})
-        if not redisCfg:
-            print 'redis configuration not exist!'
-            exit(1)
-        redisCli = Redis(host=redisCfg['host'], port=redisCfg['port'])
-        if redisCli.exists(ALG_NEWS_FEATURE_KEY):
-            redisCli.delete(ALG_NEWS_FEATURE_KEY)
-        totalCnt = 0
-        tmpDct = {}
-        for idx, (newsId, featureLst) in enumerate(newsFeatureLst):
-            totalCnt += 1
-            if len(tmpDct) >= 20:
-                print '%s remaing...' % (len(newsFeatureLst) - totalCnt)
-                redisCli.hmset(ALG_NEWS_FEATURE_KEY, tmpDct)
-                tmpDct = {}
-            tmpDct[newsId] = json.dumps(featureLst)
-        if len(tmpDct):
-            redisCli.hmset(ALG_NEWS_FEATURE_KEY, tmpDct)
+        quotaSample(sampleRdd, clickRatio, displayRatio)
