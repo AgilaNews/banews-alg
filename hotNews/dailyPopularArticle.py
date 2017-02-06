@@ -20,20 +20,20 @@ VALID_EVENTID_LST = [ARTICLE_LIKE,
                      LIST_ARTICLE_CLICK,
                      ARTICLE_COMMENT]
 NOW = datetime.now()
-CURRENT_AVAILABLE_CNT = 200
+CURRENT_AVAILABLE_CNT = 600
 CHANNEL_THRESHOLD_DCT = {
         # channelId, (cntThr, dayThr)
-        10001: (10, 1.5),   # hot
-        10002: (2, 2),    # world
-        10003: (2, 1),    # sports
-        10004: (2, 1),    # entertainment
-        10005: (0.1, 2),  # games
-        10006: (0.1, 2),  # lifestyle
-        10007: (0.1, 2),  # business
-        10008: (0.1, 2),  # sci&tech
-        10009: (0.1, 2),  # opinion
-        10010: (2, 1),    # national
-        10013: (0.1, 2),  # NBA
+        10001: (1, 1),  # hot
+        10002: (0, 2),    # world
+        10003: (0, 1),    # sports
+        10004: (0, 1.5),    # entertainment
+        10005: (0, 3),  # games
+        10006: (0, 2),  # lifestyle
+        10007: (0, 2),  # business
+        10008: (0, 2),  # sci&tech
+        10009: (0, 2),  # opinion
+        10010: (0, 1),    # national
+        10013: (0, 1),  # NBA
     }
 REDIS_POPULAR_NEWS_PREFIX = 'BA_POPULAR_NEWS_%i'
 HADOOP_BIN = '/home/work/hadoop-2.6.0-cdh5.7.0/bin/hadoop'
