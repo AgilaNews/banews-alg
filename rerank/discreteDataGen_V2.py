@@ -7,13 +7,10 @@ from datetime import date, datetime, timedelta
 from random import random
 import json
 import hashlib
-import MySQLdb
 import string
 from optparse import OptionParser
 
 from pyspark import SparkContext
-
-import settings
 
 KDIR = os.path.dirname(os.path.abspath(__file__))
 ACTION_TODAY_LOG_DIR = '/banews/useraction.log-*'
@@ -101,55 +98,15 @@ def getUserActionLog(sc, start_date, end_date):
             )
     return actionLogRdd
 
-def getNewsExtra(start_date, end_date):
-    env = settings.CURRENT_ENVIRONMENT_TAG
-    mySqlCfgDct = settings.ENVIRONMENT_CONFIG[env]['mysql_config']
-    conn = MySQLdb.connect(host=mySqlCfgDct['host'],
-                           port=mySqlCfgDct['port'],
-                           user=mySqlCfgDct['user'],
-                           passwd=mySqlCfgDct['passwd'],
-                           db=mySqlCfgDct['database'])
-    conn.autocommit(True)
-    start_date = start_date - timedelta(days=10)
-    startDateKey = start_date.strftime('%Y%m%d')
-    endDateKey = end_date.strftime('%Y%m%d')
-    cursor = conn.cursor()
-    sql = '''
-SELECT
-    url_sign,
-    title,
-    channel_id,
-    source_name
-FROM
-    tb_news
-WHERE
-    FROM_UNIXTIME(fetch_time, '%%Y%%m%%d')
-    BETWEEN %s and %s
-''' % (startDateKey, endDateKey)
-    cursor.execute(sql)
-    newsExtraDct = {}
-    for newsId, title, channelId, sourceName in cursor.fetchall():
-        newsExtraDct[newsId] = (title, channelId, sourceName)
-    return newsExtraDct
-
 def getFeatureLog(sc, start_date, end_date):
-    newsExtraDct = getNewsExtra(start_date, end_date)
-    bcNewsExtraDct = sc.broadcast(newsExtraDct)
     featureFileLst = getSpanFileLst('samplefeature', start_date, end_date)
-    def _(newsId, featuresDct):
-        (title, channelId, sourceName) = bcNewsExtraDct.value[newsId]
-        featuresDct['TITLE'] = title
-        featuresDct['CHANNEL_ID'] = channelId
-        featuresDct['SOURCE'] = sourceName
-        return featuresDct
     featureLogRdd = sc.textFile(','.join(featureFileLst)).map(
                 lambda attrStr: json.loads(attrStr)
             ).filter(
                 lambda attrDct: ('did' in attrDct) and \
                                 ('news_id' in attrDct) and \
                                 ('session' in attrDct) and \
-                                ('features' in attrDct) and \
-                                (attrDct['news_id'] in bcNewsExtraDct.value)
+                                ('features' in attrDct)
             ).map(
                 lambda attrDct: (attrDct['did'],
                                  attrDct['session'],
@@ -163,7 +120,7 @@ def getFeatureLog(sc, start_date, end_date):
                 lambda x, y: x if x[1] >= y[1] else y
             ).map(
                 lambda ((did, newsId), (featuresDct, time)): \
-                        ((did, newsId), _(newsId, featuresDct))
+                        ((did, newsId), featuresDct)
             )
     return featureLogRdd
 
@@ -199,8 +156,7 @@ def discreteBoolFeatures(featureName, value):
         return featureName + FEATURE_GAP + '0'
 
 def getTitleFeature(title, finalFeatureLst):
-    title = title.lower().translate(None,
-            string.punctuation)
+    title = title.lower().translate(None, string.punctuation)
     titleWordLst = title.strip().split()
     titleCntFeature = discreteGapFeatures('TITLE_COUNT',
             len(titleWordLst), [5, 10, 15])
@@ -232,24 +188,24 @@ def setMetaFeature(featuresDct, finalFeatureLst):
 
 def setActionFeature(featuresDct, finalFeatureLst):
     gapFeatureParamsLst = [
-            #('HISTORY_DISPLAY_COUNT', [100, 1000, 5000, 10000, 50000, 100000]),
-            #('HISTORY_READ_COUNT', [100, 1000, 5000, 10000]),
-            #('HISTORY_LIKE_COUNT', [10, 50, 100, 500, 1000]),
+            ('HISTORY_DISPLAY_COUNT', [100, 1000, 5000, 10000, 50000, 100000]),
+            ('HISTORY_READ_COUNT', [100, 1000, 5000, 10000]),
+            ('HISTORY_LIKE_COUNT', [10, 50, 100, 500, 1000]),
             ('HISTORY_COMMENT_COUNT', [5, 10, 20, 50, 100]),]
     for featureName, sepValLst in gapFeatureParamsLst:
         value = featuresDct.get(featureName, 0)
         feature = discreteGapFeatures(
                 featureName, value, sepValLst)
         finalFeatureLst.append(feature)
-    #intFeatureParamsLst = [
-    #        ('HISTORY_READ_DISPLAY_RATIO', 1000),
-    #        ('HISTORY_LIKE_DISPLAY_RATIO', 1000),
-    #        ('HISTORY_COMMENT_DISPLAY_RATIO', 1000),]
-    #for featureName, factor in intFeatureParamsLst:
-    #    value = min(1. ,featuresDct.get(featureName, 0))
-    #    feature = discreteIntFeatures(
-    #            featureName, value, factor)
-    #    finalFeatureLst.append(feature)
+    intFeatureParamsLst = [
+            ('HISTORY_READ_DISPLAY_RATIO', 1000),
+            ('HISTORY_LIKE_DISPLAY_RATIO', 1000),
+            ('HISTORY_COMMENT_DISPLAY_RATIO', 1000),]
+    for featureName, factor in intFeatureParamsLst:
+        value = min(1. ,featuresDct.get(featureName, 0))
+        feature = discreteIntFeatures(
+                featureName, value, factor)
+        finalFeatureLst.append(feature)
     return finalFeatureLst
 
 def formatSampleFeatures(sampleFeatureRdd):
@@ -259,25 +215,15 @@ def formatSampleFeatures(sampleFeatureRdd):
         setMetaFeature(featuresDct, finalFeatureLst)
         # extract news action features
         setActionFeature(featuresDct, finalFeatureLst)
-        return set(finalFeatureLst)
+        # label samples
+        featureIdxSet = set()
+        for idx, featureName in enumerate(finalFeatureLst):
+            featureIdx = hashFeature(featureName)
+            featureIdxSet.add(featureIdx)
+        sortedFeatureIdxLst = sorted(featureIdxSet)
+        return map(lambda val: '%s:1'%val, sortedFeatureIdxLst)
     sampleFeatureRdd = sampleFeatureRdd.mapValues(_)
-    # get whole feature mapping
-    featureNameSet = sampleFeatureRdd.map(
-                lambda (weight, featureNameLst): set(featureNameLst)
-            ).reduce(
-                lambda x, y: x | y
-            )
-    # format sample features
-    sampleFeatureRdd = sampleFeatureRdd.mapValues(
-                lambda featureNameSet: [hashFeature(featureName) \
-                        for featureName in featureNameSet]
-            ).mapValues(
-                lambda featureIdxLst: sorted(set(featureIdxLst))
-            ).mapValues(
-                lambda featureIdxLst: map(lambda val: '%s:1'%val,
-                    featureIdxLst)
-            )
-    return (sampleFeatureRdd, featureNameSet)
+    return sampleFeatureRdd
 
 def quotaSample(sampleRdd, posRatio, negRatio):
     def _(weight, featureIdxLst):
@@ -320,17 +266,15 @@ if __name__ == '__main__':
 
     start_date = datetime.strptime(options.start_date, '%Y%m%d').date()
     end_date = datetime.strptime(options.end_date, '%Y%m%d').date()
+    sampleFeatureRdd = maxLabelLog(sc, start_date, end_date)
     global DATA_DIR
     global SAMPLE_FILENAME
-    global FEAUTRE_NAME_FILENAME
     if not options.dataDir:
         print 'data directory missing, error!'
         exit(0)
     DATA_DIR = options.dataDir
     SAMPLE_FILENAME = os.path.join(DATA_DIR, 'sample.dat')
-    FEAUTRE_NAME_FILENAME = os.path.join(DATA_DIR, 'featureName.mapping')
     if options.action == 'verbose':
-        sampleFeatureRdd = maxLabelLog(sc, start_date, end_date)
         categoryRdd = sampleFeatureRdd.map(
                     lambda (weight, featuresDct): (weight, 1)
                 ).reduceByKey(
@@ -342,42 +286,7 @@ if __name__ == '__main__':
             print '%s. eventId:%s, cnt:%s' % (idx, category, cnt)
         print '=' * 60
     elif options.action == 'sample':
-        sampleFeatureRdd = maxLabelLog(sc, start_date, end_date)
-        (sampleRdd, featureNameLst) = formatSampleFeatures(sampleFeatureRdd)
+        sampleRdd = formatSampleFeatures(sampleFeatureRdd)
         clickRatio = float(options.clickRatio)
         displayRatio = float(options.displayRatio)
         quotaSample(sampleRdd, clickRatio, displayRatio)
-        with open(FEAUTRE_NAME_FILENAME, 'w') as fp:
-            featureNameIdxDct = {}
-            for featureName in featureNameLst:
-                featureNameIdxDct[featureName] = hashFeature(featureName)
-            sortedFeatureNameLst = sorted(featureNameIdxDct.items(),
-                    key=lambda vals: vals[1], reverse=False)
-            for featureName, featureIdx in sortedFeatureNameLst:
-                print >>fp, '%s\t%s' % (featureIdx, featureName)
-    elif options.action == 'feature':
-        featureIdxDct = {}
-        idxScoDct = {}
-        MODEL_FILENAME = os.path.join(DATA_DIR, 'liblinear.model')
-        with open(MODEL_FILENAME, 'r') as fp:
-            idx = 0
-            for line in fp:
-                idx += 1
-                if idx <= 6:
-                    continue
-                idxScoDct[idx - 6] = float(line.strip())
-        with open(FEAUTRE_NAME_FILENAME, 'r') as fp:
-            for line in fp:
-                vals = line.strip().split('\t')
-                if len(vals) != 2:
-                    continue
-                (featureIdx, featureName) = vals
-                featureIdxDct[featureName] = \
-                        idxScoDct[int(featureIdx)]
-        sortedFeatureScoLst = sorted(featureIdxDct.items(),
-                key=lambda val:val[1], reverse=True)
-        SORTED_FEATURE_MAPPING = os.path.join(DATA_DIR,
-                'featureName.mapping.score')
-        with open(SORTED_FEATURE_MAPPING, 'w') as fp:
-            for featureName, featureSco in sortedFeatureScoLst:
-                print >>fp, '%s\t%.5f' % (featureName, featureSco)
