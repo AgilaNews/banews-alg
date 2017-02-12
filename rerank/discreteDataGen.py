@@ -30,6 +30,7 @@ ACTION_WEGITH_DCT = {
             ARTICLE_LIKE_EVENTID: 3,
             ARTICLE_COMMENT_EVENTID: 3
         }
+MIN_USER_ACTION = 5
 ROUND_CNT = 5
 POSITIVE_TAG = '1'
 NEGATIVE_TAG = '-1'
@@ -170,8 +171,27 @@ def getFeatureLog(sc, start_date, end_date):
 def maxLabelLog(sc, start_date, end_date):
     actionLogRdd = getUserActionLog(sc, start_date, end_date)
     featureLogRdd = getFeatureLog(sc, start_date, end_date)
-    sampleRdd = featureLogRdd.leftOuterJoin(actionLogRdd, 128).map(
+    sampleRdd = featureLogRdd.leftOuterJoin(actionLogRdd, 256).map(
                 lambda (key, (featuresDct, weight)): \
+                        (key, (-1 if not weight else weight, featuresDct))
+            )
+    # skip above, remove users' sample without any positive action
+    validUserLst = sampleRdd.map(
+                lambda ((did, newsId), (weight, featuresDct)): \
+                        (did, weight)
+            ).groupByKey(256).filter(
+                lambda (did, weightLst): \
+                        sum(map(lambda val: 1 if val > 0 else 0,
+                            weightLst)) >= MIN_USER_ACTION
+            ).map(
+                lambda (did, weightLst): did
+            ).collect()
+    bValidUserLst = sc.broadcast(validUserLst)
+    sampleRdd = sampleRdd.filter(
+                lambda ((did, newsId), (weight, featuresDct)): \
+                        did in bValidUserLst.value
+            ).map(
+                lambda (key, (weight, featuresDct)): \
                         (-1 if not weight else weight, featuresDct)
             )
     return sampleRdd
@@ -211,8 +231,8 @@ def getTitleFeature(title, finalFeatureLst):
     return finalFeatureLst
 
 def setMetaFeature(featuresDct, finalFeatureLst):
-    pictureFeature = discreteIntFeatures('PICTURE_COUNT',
-            featuresDct.get('PICTURE_COUNT'), 1)
+    pictureFeature = discreteGapFeatures('PICTURE_COUNT',
+            featuresDct.get('PICTURE_COUNT'), [0, 1, 3])
     finalFeatureLst.append(pictureFeature)
     videoFeature = discreteBoolFeatures('VIDEO_COUNT',
             featuresDct.get('VIDEO_COUNT'))
@@ -235,7 +255,7 @@ def setActionFeature(featuresDct, finalFeatureLst):
             #('HISTORY_DISPLAY_COUNT', [100, 1000, 5000, 10000, 50000, 100000]),
             #('HISTORY_READ_COUNT', [100, 1000, 5000, 10000]),
             #('HISTORY_LIKE_COUNT', [10, 50, 100, 500, 1000]),
-            ('HISTORY_COMMENT_COUNT', [5, 10, 20, 50, 100]),]
+            ('HISTORY_COMMENT_COUNT', [1, 5, 10, 20, 50, 100]),]
     for featureName, sepValLst in gapFeatureParamsLst:
         value = featuresDct.get(featureName, 0)
         feature = discreteGapFeatures(
@@ -359,13 +379,15 @@ if __name__ == '__main__':
         featureIdxDct = {}
         idxScoDct = {}
         MODEL_FILENAME = os.path.join(DATA_DIR, 'liblinear.model')
+        FEATURE_START_IDX = 6
         with open(MODEL_FILENAME, 'r') as fp:
             idx = 0
             for line in fp:
                 idx += 1
-                if idx <= 6:
+                if idx <= FEATURE_START_IDX:
                     continue
-                idxScoDct[idx - 6] = float(line.strip())
+                idxScoDct[idx - FEATURE_START_IDX] = \
+                        float(line.strip())
         with open(FEAUTRE_NAME_FILENAME, 'r') as fp:
             for line in fp:
                 vals = line.strip().split('\t')
