@@ -24,3 +24,6 @@ docker rmi $(docker images | grep SNAPSHOT | awk '{print $3}')
 docker images | grep "weeks ago" | grep -v ubuntu | grep -v alpine | grep -v java | awk '{print $3}' | xargs docker rmi
 
 ##Similarly You can remove days, months old images too.
+
+docker stop $(docker ps -a -q)
+docker rm $(docker ps -a -q)

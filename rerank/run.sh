@@ -11,7 +11,6 @@ MODEL_FILE=$DATA_DIR/'liblinear.model'
 today=`date +%Y%m%d`
 end_date=`date -d '1 days' +%Y%m%d`
 start_date=`date -d '-28 days' +%Y%m%d`
-debug=false
 PYTHON=/usr/bin/python2.7
 
 SCRIPT_NAME='discreteDataGen.py'
@@ -31,7 +30,7 @@ if [ $1 = "sample" ]; then
         --conf spark.driver.maxResultSize=4096 \
         --conf spark.yarn.driver.memoryOverhead=6g \
         ${SCRIPT_NAME} -s $start_date -e $end_date -a sample \
-        --clickRatio 0.79 --displayRatio 0.23 --dataDir $DATA_DIR
+        --clickRatio 0.90 --displayRatio 0.18 --dataDir $DATA_DIR
     echo "scaling trainning data..."
     #$SCALE_EXE -s $RANGE_FILE -l 0 "$SAMPLE_FILE" > $SCALE_FILE 
 fi
@@ -72,22 +71,25 @@ fi
 #cost=0.015625
 #cost=0.00195312
 #cost=0.00390625
-cost=0.125
+cost=0.015625
 if [ $1 = "crossValidation" ]; then
     $TRAIN_EXE $svm_params -v 5 -c $cost $SAMPLE_FILE 
 fi
 
 if [ $1 = "train" ]; then
     $TRAIN_EXE $svm_params -c $cost $SAMPLE_FILE $MODEL_FILE
-  if [ "$debug" = true ]; then
-      sandbox="10.8.6.7"
-      echo 'scp to sandbox@'${sandbox}
-      scp -r /data/models/liblinear root@$sandbox:/data/models/
-      ssh root@$sandbox "chown -R work:work /data/models/liblinear"
-  else
+fi
+
+if [ $1 = "deploy" ]; then
+  if [ $2 = "online" ]; then
       comment="10.8.91.237"
       echo 'scp to comment@'${comment}
       scp -r /data/models/liblinear root@$comment:/data/models/
       ssh root@$comment "chown -R work:work /data/models/liblinear"
+  else
+      sandbox="10.8.6.7"
+      echo 'scp to sandbox@'${sandbox}
+      scp -r /data/models/liblinear root@$sandbox:/data/models/
+      ssh root@$sandbox "chown -R work:work /data/models/liblinear"
   fi
 fi
