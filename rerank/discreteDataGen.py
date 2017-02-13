@@ -378,7 +378,7 @@ if __name__ == '__main__':
                 featureNameIdxDct[featureName] = hashFeature(featureName)
             sortedFeatureNameLst = sorted(featureNameIdxDct.items(),
                     key=lambda vals: vals[1], reverse=False)
-            tmpDct = []
+            tmpDct = {}
             for featureName, featureIdx in sortedFeatureNameLst:
                 if len(tmpDct) == 20:
                     redisCli_sandbox.mset(tmpDct)
