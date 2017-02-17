@@ -8,7 +8,6 @@ from random import random
 import json
 import hashlib
 import MySQLdb
-from redis import Redis
 import string
 from optparse import OptionParser
 
@@ -370,25 +369,14 @@ if __name__ == '__main__':
         clickRatio = float(options.clickRatio)
         displayRatio = float(options.displayRatio)
         quotaSample(sampleRdd, clickRatio, displayRatio)
-        redisCli_online = Redis(host='10.8.7.6', port=6379)
-        redisCli_sandbox = Redis(host='10.8.14.136', port=6379)
         with open(FEAUTRE_NAME_FILENAME, 'w') as fp:
             featureNameIdxDct = {}
             for featureName in featureNameLst:
                 featureNameIdxDct[featureName] = hashFeature(featureName)
             sortedFeatureNameLst = sorted(featureNameIdxDct.items(),
                     key=lambda vals: vals[1], reverse=False)
-            tmpDct = {}
             for featureName, featureIdx in sortedFeatureNameLst:
-                if len(tmpDct) == 20:
-                    redisCli_sandbox.mset(tmpDct)
-                    redisCli_online.mset(tmpDct)
-                    tmpDct = {}
-                tmpDct[CACHE_ALG_FEATURE_HASH_KEY + featureName] = featureIdx
                 print >>fp, '%s\t%s' % (featureIdx, featureName)
-            if tmpDct:
-                redisCli_sandbox.mset(tmpDct)
-                redisCli_online.mset(tmpDct)
     elif options.action == 'feature':
         featureIdxDct = {}
         idxScoDct = {}
