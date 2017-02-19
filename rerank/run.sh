@@ -10,7 +10,7 @@ SCALE_FILE=$DATA_DIR/'sample.dat.scale'
 MODEL_FILE=$DATA_DIR/'liblinear.model'
 today=`date +%Y%m%d`
 end_date=`date -d '1 days' +%Y%m%d`
-start_date=`date -d '-28 days' +%Y%m%d`
+start_date=`date -d '-2 days' +%Y%m%d`
 PYTHON=/usr/bin/python2.7
 SCRIPT_NAME='discreteDataGen.py'
 
@@ -59,7 +59,7 @@ verboseSample() {
         --conf spark.driver.maxResultSize=4096 \
         --conf spark.yarn.driver.memoryOverhead=4096 \
         ${SCRIPT_NAME} -s $start_date -e $end_date \
-        --dataDir $DATA_DIR -a $1
+        --dataDir $DATA_DIR -a verbose
 }
 
 svm_params="-s 0 -B 1 -n 5"
@@ -67,8 +67,8 @@ searchParam() {
     $TRAIN_EXE $svm_params -v 5 -C $SAMPLE_FILE
 }
 
+cost=0.015625
 crossValidationParam() {
-    cost=0.015625
     $TRAIN_EXE $svm_params -v 5 -c $cost $SAMPLE_FILE 
 }
 
@@ -76,7 +76,7 @@ trainModel() {
     $TRAIN_EXE $svm_params -c $cost $SAMPLE_FILE $MODEL_FILE
 }
 
-deploy() {
+deployServer() {
     if [ $2 = "online" ]; then
         comment="10.8.91.237"
         echo 'scp to comment@'${comment}
@@ -95,10 +95,6 @@ case $1 in
         extractSample
         exit 0
         ;;
-    feature)
-        extractFeature
-        exit 0
-        ;;
     verbose)
         verboseSample
         exit 0
@@ -115,10 +111,15 @@ case $1 in
         trainModel
         exit 0
         ;;
+    feature)
+        extractFeature
+        exit 0
+        ;;
     deploy)
         extractSample
         trainModel
-        deploy
+        extractFeature
+        deployServer
         exit 0
         ;;
     *)
