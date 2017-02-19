@@ -10,7 +10,7 @@ SCALE_FILE=$DATA_DIR/'sample.dat.scale'
 MODEL_FILE=$DATA_DIR/'liblinear.model'
 today=`date +%Y%m%d`
 end_date=`date -d '1 days' +%Y%m%d`
-start_date=`date -d '-2 days' +%Y%m%d`
+start_date=`date -d '-10 days' +%Y%m%d`
 PYTHON=/usr/bin/python2.7
 SCRIPT_NAME='discreteDataGen.py'
 

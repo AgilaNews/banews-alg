@@ -263,15 +263,15 @@ def setActionFeature(featuresDct, finalFeatureLst):
         feature = discreteGapFeatures(
                 featureName, value, sepValLst)
         finalFeatureLst.append(feature)
-    #intFeatureParamsLst = [
-    #        ('HISTORY_READ_DISPLAY_RATIO', 1000),
-    #        ('HISTORY_LIKE_DISPLAY_RATIO', 1000),
-    #        ('HISTORY_COMMENT_DISPLAY_RATIO', 1000),]
-    #for featureName, factor in intFeatureParamsLst:
-    #    value = min(1. ,featuresDct.get(featureName, 0))
-    #    feature = discreteIntFeatures(
-    #            featureName, value, factor)
-    #    finalFeatureLst.append(feature)
+    intFeatureParamsLst = [
+            ('HISTORY_READ_DISPLAY_RATIO', 1000),
+            ('HISTORY_LIKE_DISPLAY_RATIO', 1000),
+            ('HISTORY_COMMENT_DISPLAY_RATIO', 1000),]
+    for featureName, factor in intFeatureParamsLst:
+        value = min(1. ,featuresDct.get(featureName, 0))
+        feature = discreteIntFeatures(
+                featureName, value, factor)
+        finalFeatureLst.append(feature)
     return finalFeatureLst
 
 def formatSampleFeatures(sampleFeatureRdd):
