@@ -21,8 +21,8 @@ double accuracy(const dvec_t& dec_values, const ivec_t& ty);
 
 // evaluation function pointer
 // You can assign this pointer to any above prototype
-//double (*validation_function)(const dvec_t&, const ivec_t&) = auc;
-double (*validation_function)(const dvec_t&, const ivec_t&) = accuracy;
+double (*validation_function)(const dvec_t&, const ivec_t&) = auc;
+//double (*validation_function)(const dvec_t&, const ivec_t&) = accuracy;
 
 
 static char *line = NULL;

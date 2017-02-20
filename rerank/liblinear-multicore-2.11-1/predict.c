@@ -73,8 +73,9 @@ void do_predict(FILE *input, FILE *output)
 		get_labels(model_,labels);
 		prob_estimates = (double *) malloc(nr_class*sizeof(double));
 		fprintf(output,"labels");
-		for(j=0;j<nr_class;j++)
+		for(j=0;j<nr_class;j++){
 			fprintf(output," %d",labels[j]);
+        }
 		fprintf(output,"\n");
 		free(labels);
 	}
@@ -209,6 +210,7 @@ int main(int argc, char **argv)
 				break;
 		}
 	}
+    printf("%i\n", flag_predict_probability);
 	if(i>=argc)
 		exit_with_help();
 
@@ -233,8 +235,8 @@ int main(int argc, char **argv)
 	}
 
 	x = (struct feature_node *) malloc(max_nr_attr*sizeof(struct feature_node));
-	//do_predict(input, output);
-    binary_class_predict(input, output);
+	do_predict(input, output);
+    //binary_class_predict(input, output);
 	free_and_destroy_model(&model_);
 	free(line);
 	free(x);
