@@ -77,7 +77,7 @@ trainModel() {
 }
 
 deployServer() {
-    if [ $2 = "online" ]; then
+    if [ $1 = "online" ]; then
         comment="10.8.91.237"
         echo 'scp to comment@'${comment}
         scp -r /data/models/liblinear root@$comment:/data/models/
@@ -119,7 +119,7 @@ case $1 in
         extractSample
         trainModel
         extractFeature
-        deployServer
+        deployServer $2
         exit 0
         ;;
     *)
