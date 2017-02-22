@@ -72,41 +72,42 @@ def stemDoc(newsDoc):
     stemmedDocStr = ' '.join(stemmedDocLst)
     return stemmedDocStr
 
-def preProcessSPACY(dateObj, start_date, end_date, withPreprocess):
+def preProcessSPACY(dateObj, start_date, end_date):
     fileName = dateObj.strftime('%Y%m%d') + '_preprocess.dat'
-    preNewsDocLst = []
-    preNewsIdLst = []
     print '%s, preprocessing trainning data...' % \
             datetime.now().strftime('%s')
-    if withPreprocess:
-        print '%s, loading trainning data...' % \
-                datetime.now().strftime('%s')
-        newsLst = loadData(dateObj, start_date, end_date)
-        print '%s, %s news loaded...' % \
-                (datetime.now().strftime('%s'), len(newsLst))
-        with open(os.path.join(PREPROCESS_DATA_DIR, fileName), 'w') as fp:
-            (idLst, docLst) = zip(*newsLst)
-            for idx, curDoc in enumerate(en_nlp.pipe(docLst,
-                batch_size=50, n_threads=4)):
-                stemmedDocStr = stemDoc(curDoc)
-                newsId = idLst[idx]
-                print >>fp, '%s,%s' % (newsId, stemmedDocStr)
-                preNewsDocLst.append(stemmedDocStr)
-            preNewsIdLst = idLst
-    else:
-        with open(os.path.join(PREPROCESS_DATA_DIR, fileName), 'r') as fp:
-            for line in fp:
-                vals = line.strip().split(',', 1)
-                if len(vals) != 2:
-                    continue
-                (newsId, newsDoc) = vals
-                preNewsDocLst.append(newsDoc)
-                preNewsIdLst.append(newsId)
-    return (preNewsIdLst, preNewsDocLst)
+    print '%s, loading trainning data...' % \
+            datetime.now().strftime('%s')
+    newsLst = loadData(dateObj, start_date, end_date)
+    print '%s, %s news loaded...' % \
+            (datetime.now().strftime('%s'), len(newsLst))
+    with open(os.path.join(PREPROCESS_DATA_DIR, fileName), 'w') as fp:
+        (idLst, docLst) = zip(*newsLst)
+        for idx, curDoc in enumerate(en_nlp.pipe(docLst,
+            batch_size=50, n_threads=4)):
+            if idx % 1000 == 0:
+                print 'spacy preprocessing %s news...' % idx
+            stemmedDocStr = stemDoc(curDoc)
+            newsId = idLst[idx]
+            if not stemmedDocStr.strip():
+                continue
+            print >>fp, '%s,%s' % (newsId, stemmedDocStr)
+    return None
 
-def trainLDA(dateObj, start_date, end_date, withPreprocess=False):
-    (preNewsIdLst, preNewsDocLst) = preProcessSPACY(dateObj,
-            start_date, end_date, withPreprocess)
+def trainLDA(dateObj, start_date, end_date):
+    # load training data first
+    preNewsDocLst = []
+    preNewsIdLst = []
+    dateObj = dateObj - timedelta(days=1)
+    fileName = dateObj.strftime('%Y%m%d') + '_preprocess.dat'
+    with open(os.path.join(PREPROCESS_DATA_DIR, fileName), 'r') as fp:
+        for line in fp:
+            vals = line.strip().split(',', 1)
+            if len(vals) != 2:
+                continue
+            (newsId, newsDoc) = vals
+            preNewsDocLst.append(newsDoc)
+            preNewsIdLst.append(newsId)
     print '%s, space vector model building...' % \
             datetime.now().strftime('%s')
     vectorizer = CountVectorizer(max_df=MAX_DF,
@@ -279,12 +280,14 @@ if __name__ == '__main__':
     parser.add_option('-s', '--start_date', dest='start_date')
     parser.add_option('-e', '--end_date', dest='end_date')
     (options, args) = parser.parse_args()
-    if options.action == 'train':
+    if options.action in ('preprocess', 'train'):
         dateObj = datetime.strptime(options.date, '%Y%m%d').date()
         end_date = date.today() + timedelta(days=1)
         start_date = end_date - timedelta(days=120)
-        trainLDA(dateObj, start_date, end_date,
-                withPreprocess=options.preprocess)
+        if options.action == 'preprocess':
+            preProcessSPACY(dateObj, start_date, end_date)
+        elif options.action == 'train':
+            trainLDA(dateObj, start_date, end_date)
     elif options.action.startswith('predict_'):
         start_date = datetime.strptime(options.start_date, '%Y%m%d').date()
         end_date = datetime.strptime(options.end_date, '%Y%m%d').date()
