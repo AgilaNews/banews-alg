@@ -38,6 +38,32 @@ if [ $1 = "user_interest" ]; then
         -e $end_date >> user_interest.log 2>&1
 fi
 
+# calculate users' video interest distribution
+if [ $1 = "video_interest" ]; then
+    echo "video channel calculation..."
+    /home/work/spark-1.6.2-bin-ba/bin/spark-submit \
+        --master yarn-client --executor-memory 1G \
+        --num-executors 10 --executor-cores 4 \
+        --driver-memory 4G --conf spark.akka.frameSize=100 \
+        --conf spark.shuffle.manager=SORT \
+        --conf spark.yarn.executor.memoryOverhead=4096 \
+        --conf spark.yarn.driver.memoryOverhead=4096 \
+        user_videochannel.py
+
+    echo "video interest calculation..."
+    end_date=`date -d '0 days' +%Y%m%d`
+    start_date=`date -d '-30 days' +%Y%m%d`
+    /home/work/spark-1.6.2-bin-ba/bin/spark-submit \
+        --master yarn-client --executor-memory 1G \
+        --num-executors 10 --executor-cores 4 \
+        --driver-memory 4G --conf spark.akka.frameSize=100 \
+        --conf spark.shuffle.manager=SORT \
+        --conf spark.yarn.executor.memoryOverhead=4096 \
+        --conf spark.yarn.driver.memoryOverhead=4096 \
+        userVideoInterest.py -a video_interest -s $start_date \
+        -e $end_date >> video_interest.log 2>&1
+fi
+
 # calcualte recent topic click distribution, 
 # and recent news score in one days
 if [ $1 = "recent_score" ]; then
