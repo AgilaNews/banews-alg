@@ -315,7 +315,7 @@ def formatDate(datestr):
 def getParam():
     parser = argparse.ArgumentParser()
     parser.add_argument('-a', '--action', help="action type",
-        default="user_interest", choices=["debug", "user_interest"])
+        default="video_interest", choices=["debug", "video_interest"])
     parser.add_argument('-s', '--start_date', help="start date",
         required=True)
     parser.add_argument('-e', '--end_date', help="end date",
@@ -331,6 +331,6 @@ if __name__ == '__main__':
 
     if args.action == "debug":
         test(start_date, end_date)
-    elif args.action == "user_interest":
+    elif args.action == "video_interest":
         print args.action
         main(start_date, end_date)
