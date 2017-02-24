@@ -178,7 +178,7 @@ def update_channel_ratio(redisCli, userChannelCount):
         if channel_id in userChannelCount:
             count = userChannelCount[channel_id]
         channelDct[channel_id] = count*1.0/total
-    update_log("/home/work/zyl/banews-alg/userTopicInterest/log/", "31999", channelDct)
+    update_log("/home/work/banews-alg/userTopicInterest/log/", "31999", channelDct)
     redisCli.hmset('ALG_YOUTUBE_CHANNEL_RATIO_KEY', channelDct)
 
 
