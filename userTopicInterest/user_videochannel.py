@@ -152,9 +152,9 @@ def video_stat(fileLst, start, end):
                 lambda line: videoMapper(line)
             ).reduceByKey(add)
     videoStat = mergeRDD.collect()
-    userChannelCount = []
+    userChannelCount = {}
     for youtube_channel_id,count in videoStat:
-        userChannelCount.append((youtube_channel_id, count))
+        userChannelCount[youtube_channel_id] = count
     return userChannelCount
 
 def update_channel_ratio(redisCli, userChannelCount):
@@ -162,13 +162,13 @@ def update_channel_ratio(redisCli, userChannelCount):
     channelDct = {}
 
     db = MySQLdb.connect("10.8.22.123", "banews_w", "MhxzKhl-Happy", "banews")
-    timelimt = int(time.time()) - 30*24*3600
-    sql = '''select distinct youtube_channel_id from `banews`.`tb_video` where update_time>%d''' % timelimt
+    timelimit = int(time.time()) - 30*24*3600
+    sql = '''select distinct youtube_channel_id from `banews`.`tb_video` where is_valid=1 and status>=1 and update_time>%d''' % timelimit
     cursor = db.cursor()
     cursor.execute(sql)
     results = cursor.fetchall()
 
-    for channel_id, count in userChannelCount:
+    for channel_id, count in userChannelCount.items():
         total += count
     total += len(results) - len(userChannelCount)
 
@@ -178,6 +178,7 @@ def update_channel_ratio(redisCli, userChannelCount):
         if channel_id in userChannelCount:
             count = userChannelCount[channel_id]
         channelDct[channel_id] = count*1.0/total
+    update_log("/home/work/zyl/banews-alg/userTopicInterest/log/", "31999", channelDct)
     redisCli.hmset('ALG_YOUTUBE_CHANNEL_RATIO_KEY', channelDct)
 
 
@@ -185,8 +186,8 @@ def update_log(directory, channelId, userChannelCount):
     fileName = os.path.join(directory, '%s_%s_SUCCESS.dat' \
                             % (datetime.now().strftime('%Y-%m-%d_%H:%M'), channelId))
     fp = open(fileName, "w")
-    for youtube_channel_id, count in userChannelCount:
-        fp.write("%s\t%s\n"%(youtube_channel_id, count))
+    for youtube_channel_id, count in userChannelCount.items():
+        fp.write("%s\t%s\n"%(youtube_channel_id, str(count)))
     fp.close()
 
 if __name__ == '__main__':
@@ -196,7 +197,6 @@ if __name__ == '__main__':
     getVideoChannelMap()
     fileLst = getFileList(start, end)
     userChannelCount = video_stat(fileLst, start, end)
-    update_log("/home/work/banews-alg/userTopicInterest/log/", "31999", userChannelCount)
 
 
     redisCli_online = Redis(host='10.8.15.189', port=6379)
