@@ -57,26 +57,28 @@ class MysqlBackup:
     def backup(self):
         padding = len(str(self.keep))
         backups = []
+        backupDir = os.path.join(self.store, self.databases)
 
         # remove files older than keep days
         cutdate = datetime.datetime.now() - datetime.timedelta(days=self.keep)
-        if os.path.isdir(self.store):
-            for backup_file in os.listdir(self.store):
-                bparts = backup_file.split("_")
-                if bparts[0].isdigit():
-                    dumpdate = datetime.datetime.strptime(bparts[0], "%Y%m%d%H%M%S")
-                    if dumpdate < cutdate:
-                        os.remove(os.path.join(self.store, backup_file))
+        if os.path.isdir(backupDir):
+            for backup_file in os.listdir(backupDir):
+                createDate = os.path.getctime(
+                        os.path.join(backupDir, backup_file))
+                createDate = datetime.datetime.fromtimestamp(createDate)
+                if createDate < cutdate:
+                    curFile = os.path.join(backupDir, backup_file)
+                    print 'Removing file %s...' % curFile
+                    os.remove(curFile)
 
         # get the current date and timestamp and the zero backup name
         tstamp = datetime.datetime.now().strftime("%Y-%m-%d")
         backupName = '%s_%s.data' % (tstamp, self.tables)
-        backupDir = os.path.join(self.store, self.databases)
         if not os.path.isdir(backupDir):
             os.makedirs(backupDir)
 
         columnLst = self.get_table_columns(self.tables)
-        sqlCmd = 'select {columnsStr} from {tables}'.format(
+        sqlCmd = 'select {columnsStr} from {tables} where content_type=0'.format(
                 columnsStr=','.join(map(lambda val: '`%s`'%val, columnLst)),
                 tables=self.tables)
         cursor = self.get_cursor()

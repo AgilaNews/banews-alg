@@ -6,19 +6,19 @@ PYTHON_BIN='/usr/bin/python2.7'
 today=`date +%Y%m%d`
 
 # backup news data from mysql
-if [ $1 = "mysql_backup" ]; then
+generateData() {
     echo "mysql backup util ", $today
     $PYTHON_BIN mysqlBackup.py
-fi
+    $PYTHON_BIN trainTopicModel.py -d $today -a preprocess
+}
 
-# train topic model based on news
-if [ $1 = "model_train" ]; then
+trainModel() {
     echo "model training..."
-    $PYTHON_BIN trainTopicModel.py -d $today -a train > train.log 2>&1
-fi
+    $PYTHON_BIN trainTopicModel.py -d $today -a train 
+}
 
-# calculate users' topic interest distribution
-if [ $1 = "user_interest" ]; then
+calcUserTopic() {
+    # calculate users' topic interest distribution
     echo "appending news topic distribution..."
     end_date=`date -d '1 days' +%Y%m%d`
     start_date=`date -d '-10 days' +%Y%m%d`
@@ -29,17 +29,17 @@ if [ $1 = "user_interest" ]; then
     start_date=`date -d '-30 days' +%Y%m%d`
     /home/work/spark-1.6.2-bin-ba/bin/spark-submit \
         --master yarn-client --executor-memory 1G \
-        --num-executors 10 --executor-cores 4 \
+        --num-executors 3 --executor-cores 4 \
         --driver-memory 4G --conf spark.akka.frameSize=100 \
         --conf spark.shuffle.manager=SORT \
         --conf spark.yarn.executor.memoryOverhead=4096 \
         --conf spark.yarn.driver.memoryOverhead=4096 \
         calUserInterest.py -a user_interest -s $start_date \
         -e $end_date >> user_interest.log 2>&1
-fi
+}
 
+calcVideoInterest(){
 # calculate users' video interest distribution
-if [ $1 = "video_interest" ]; then
     echo "video channel calculation..."
     /home/work/spark-1.6.2-bin-ba/bin/spark-submit \
         --master yarn-client --executor-memory 1G \
@@ -62,11 +62,12 @@ if [ $1 = "video_interest" ]; then
         --conf spark.yarn.driver.memoryOverhead=4096 \
         userVideoInterest.py -a video_interest -s $start_date \
         -e $end_date >> video_interest.log 2>&1
-fi
+}
 
-# calcualte recent topic click distribution, 
-# and recent news score in one days
-if [ $1 = "recent_score" ]; then
+
+calcNewsTopic() {
+    # calculate recent topic click distribution, 
+    # and recent news score in one days
     echo "topic distribution & news score calculation..."
     /home/work/spark-1.6.2-bin-ba/bin/spark-submit \
         --master yarn-client --executor-memory 1G \
@@ -76,5 +77,33 @@ if [ $1 = "recent_score" ]; then
         --conf spark.yarn.executor.memoryOverhead=2048 \
         --conf spark.yarn.driver.memoryOverhead=2048 \
         recentNewsInfo.py > recent_score.log 2>&1
-fi
+}
 
+# calcualte recent topic click distribution, 
+# and recent news score in one days
+
+case $1 in 
+    data)
+        generateData
+        exit 0
+        ;;
+    train)
+        trainModel
+        exit 0
+        ;;
+    calc_user_topic)
+        calcUserTopic
+        exit 0
+        ;;
+    calc_news_topic)
+        calcNewsTopic
+        exit 0
+        ;;
+    calc_user_interest)
+        calcUserInterest
+        exit 0
+        ;;
+    *)
+        echo "./run.sh dump|calc_user_topic|calc_news_topic|calc_user_interest"
+        exit -1;
+esac

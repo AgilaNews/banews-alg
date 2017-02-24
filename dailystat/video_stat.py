@@ -70,7 +70,8 @@ def action_filter(line, start, end):
     if event_id in ACTION_SET:
         if event_id == SHOW_ACTION:
             channel_id = line.get("channel_id")
-            if channel_id == "30001":
+            channel_id  = int(channel_id)
+            if channel_id >= 30001:
                 return True
             else:
                 return False
