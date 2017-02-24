@@ -99,11 +99,11 @@ case $1 in
         calcNewsTopic
         exit 0
         ;;
-    calc_user_interest)
-        calcUserInterest
+    calc_video_interest)
+        calcVideoInterest
         exit 0
         ;;
     *)
-        echo "./run.sh dump|calc_user_topic|calc_news_topic|calc_user_interest"
+        echo "./run.sh dump|calc_user_topic|calc_news_topic|calc_video_interest"
         exit -1;
 esac
