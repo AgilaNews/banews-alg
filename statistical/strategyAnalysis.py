@@ -53,9 +53,17 @@ def getPolicy(attrDct):
     return None
 
 def calcCliDisRatio(sc, start_date, end_date):
+    def _(dctStr):
+        try:
+            attrDct = json.loads(dctStr)
+            return attrDct
+        except:
+            return dict()
     fileLst = getSpanFileLst(start_date, end_date)
     originalRdd = sc.textFile(','.join(fileLst)).map(
-            lambda dctStr: json.loads(dctStr)
+            lambda dctStr: _(dctStr)
+        ).filter(
+            lambda attrDct: attrDct
         ).map(
             lambda attrDct: (attrDct.get('event-id'),
                              attrDct.get('did'),
