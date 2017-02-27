@@ -43,7 +43,7 @@ calcVideoInterest(){
     echo "video channel calculation..."
     /home/work/spark-1.6.2-bin-ba/bin/spark-submit \
         --master yarn-client --executor-memory 1G \
-        --num-executors 10 --executor-cores 4 \
+        --num-executors 2 --executor-cores 2 \
         --driver-memory 4G --conf spark.akka.frameSize=100 \
         --conf spark.shuffle.manager=SORT \
         --conf spark.yarn.executor.memoryOverhead=4096 \
@@ -55,7 +55,7 @@ calcVideoInterest(){
     start_date=`date -d '-30 days' +%Y%m%d`
     /home/work/spark-1.6.2-bin-ba/bin/spark-submit \
         --master yarn-client --executor-memory 1G \
-        --num-executors 10 --executor-cores 4 \
+        --num-executors 2 --executor-cores 2 \
         --driver-memory 4G --conf spark.akka.frameSize=100 \
         --conf spark.shuffle.manager=SORT \
         --conf spark.yarn.executor.memoryOverhead=4096 \
