@@ -74,6 +74,8 @@ def revistrate_tran(line):
     return ((utm_source, base_day), cnt)
 
 def uv_filter(line, start, end):
+    if not line:
+        return False
     info = line[1]
     tm = datetime.fromtimestamp(int(info.get("time", 0))/1000)
     did = info.get("did", None)
