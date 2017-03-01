@@ -132,11 +132,16 @@ def cleanDirectory():
     return None
 
 def calcNewsUV(sc, start_date, end_date, env):
+    def _(attrStr):
+        try:
+            return json.loads(attrStr)
+        except:
+            return {}
     envCfgDct = settings.ENVIRONMENT_CONFIG.get(env, {})
     newsMetaRdd = getNewsMeta(sc, envCfgDct)
     fileLst = getSpanRdd(start_date, end_date)
     uvRdd = sc.textFile(','.join(fileLst)).map(
-            lambda dctStr: json.loads(dctStr)
+            lambda dctStr: _(dctStr)
         ).filter(
             lambda attrDct: ('event-id' in attrDct) and \
                             ('time' in attrDct) and \

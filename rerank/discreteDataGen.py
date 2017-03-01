@@ -82,10 +82,17 @@ def getSpanFileLst(kind, start_date, end_date, withToday=False):
         cur_date += timedelta(days=1)
     return fileLst
 
+def evalAttribute(attrStr):
+    try:
+        attrDct = json.loads(attrStr)
+        return attrDct
+    except:
+        return {}
+
 def getUserActionLog(sc, start_date, end_date):
     userActFileLst = getSpanFileLst('useraction', start_date, end_date)
     actionLogRdd = sc.textFile(','.join(userActFileLst)).map(
-                lambda attrStr: json.loads(attrStr)
+                lambda attrStr: evalAttribute(attrStr)
             ).filter(
                 lambda attrDct: ('did' in attrDct) and \
                                 ('session' in attrDct) and \
@@ -146,7 +153,7 @@ def getFeatureLog(sc, start_date, end_date):
         featuresDct['SOURCE'] = sourceName
         return featuresDct
     featureLogRdd = sc.textFile(','.join(featureFileLst)).map(
-                lambda attrStr: json.loads(attrStr)
+                lambda attrStr: evalAttribute(attrStr)
             ).filter(
                 lambda attrDct: ('did' in attrDct) and \
                                 ('news_id' in attrDct) and \
