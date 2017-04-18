@@ -205,7 +205,8 @@ if __name__ == '__main__':
     parser.add_option('-a', '--action', dest='action')
     (options, args) = parser.parse_args()
     if options.action == 'popular':
-        for env in ['sandbox', 'online']:
+        #for env in ['sandbox', 'online']:
+        for env in ['online', ]:
             calcNewsUV(sc, start_date, end_date, env)
     elif options.action == 'temporary':
         TEMP_NEWSID_LST = ['YMIV9IXLfSA=',
